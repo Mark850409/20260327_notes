@@ -1,0 +1,130 @@
+---
+// Article detail page — SSR dynamic route
+// 查無文章時回傳 HTTP 404（見 frontend/docs/404-troubleshooting.md）
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import NotFoundPage from '../../components/NotFoundPage.astro';
+import TableOfContents from '../../components/TableOfContents.vue';
+
+const { slug } = Astro.params;
+const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
+
+let article = null;
+let error   = null;
+
+try {
+  const res = await fetch(`${apiBase}/api/articles/${slug}`);
+  if (res.ok) {
+    const json = await res.json();
+    article = json.data;
+  } else if (res.status === 404) {
+    error = 'not_found';
+  } else {
+    error = 'server_error';
+  }
+} catch (e) {
+  error = 'network_error';
+}
+
+if (!article && error === 'not_found') {
+  Astro.response.status = 404;
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('zh-TW', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+}
+---
+
+{!article && error === 'not_found' ? (
+  <NotFoundPage />
+) : (
+<BaseLayout
+  title={article?.title ?? 'Article Not Found'}
+  description={article?.description ?? ''}
+>
+  {error ? (
+    <div class="mx-auto w-full max-w-content px-4 py-12 md:px-6">
+      <div class="rounded-xl border border-zinc-200 bg-white p-10 text-center text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+        <p class="mb-3 text-5xl opacity-40">⚠</p>
+        <h1 class="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">無法載入文章</h1>
+        <p class="mt-2">請確認 API 服務是否正常運行。</p>
+        <a href="/" class="mt-5 inline-block rounded-full border border-accent px-5 py-2 text-sm font-semibold text-accent hover:bg-accent hover:text-white">← 返回首頁</a>
+      </div>
+    </div>
+  ) : (
+    <div class="mx-auto grid w-full max-w-[1280px] grid-cols-1 gap-6 px-4 py-8 md:px-6 xl:grid-cols-[minmax(0,840px)_280px] xl:justify-center">
+      <div class="min-w-0">
+
+          <!-- Breadcrumb -->
+          <nav class="mb-5 flex flex-wrap items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400" aria-label="Breadcrumb">
+            <a href="/" class="hover:text-accent">首頁</a>
+            {article.category && (
+              <>
+                <span class="text-zinc-400">›</span>
+                <a href={`/categories/${article.category.slug}`} class="hover:text-accent">{article.category.name}</a>
+              </>
+            )}
+            <span class="text-zinc-400">›</span>
+            <span class="text-zinc-700 dark:text-zinc-300">{article.title}</span>
+          </nav>
+
+          <article class="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 md:p-8">
+            <!-- Article header -->
+            <header class="mb-6 border-b border-zinc-200 pb-5 dark:border-zinc-700">
+              {article.category && (
+                <a href={`/categories/${article.category.slug}`} class="mb-2 inline-block text-xs font-semibold uppercase tracking-wide text-accent">
+                  {article.category.name}
+                </a>
+              )}
+              <h1 class="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{article.title}</h1>
+              {article.description && (
+                <p class="mt-3 text-zinc-600 dark:text-zinc-400">{article.description}</p>
+              )}
+              <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                {formatDate(article.published_at)}
+                {article.tags?.length > 0 && (
+                  <>
+                    <span>·</span>
+                    <div class="flex flex-wrap gap-2">
+                      {article.tags.map((tag: any) => (
+                        <a href={`/?tag=${tag.slug}`} class="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 hover:bg-accent/10 hover:text-accent dark:bg-zinc-800 dark:text-zinc-400">{tag.name}</a>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div class="mt-4 h-[3px] w-20 rounded bg-gradient-to-r from-accent to-sky-300" aria-hidden="true"></div>
+            </header>
+
+            <!-- Markdown content -->
+            <div
+              class="article-body prose prose-zinc max-w-none dark:prose-invert prose-headings:scroll-mt-24 prose-a:text-accent prose-a:hover:text-sky-400 prose-pre:rounded-lg prose-pre:border prose-pre:border-zinc-700/30 prose-img:rounded-lg prose-img:shadow-sm"
+              set:html={article.html_content ?? '<p>無內容</p>'}
+            />
+
+            <!-- Footer nav -->
+            <footer class="mt-8 border-t border-zinc-200 pt-5 dark:border-zinc-700">
+              <a href="/" class="text-sm font-medium text-zinc-500 hover:text-accent">← 返回文章列表</a>
+            </footer>
+          </article>
+      </div>
+
+      <!-- Table of Contents (Vue island) -->
+      {article.html_content && (
+        <aside class="hidden max-h-[calc(100vh-6rem)] overflow-y-auto xl:block xl:sticky xl:top-20">
+          <TableOfContents client:load htmlContent={article.html_content} />
+        </aside>
+      )}
+    </div>
+  )}
+</BaseLayout>
+)}
+
+<style>
+  /* 避免文章正文與右側目錄重複顯示同一份 TOC */
+  :global(.article-body .toc) {
+    display: none;
+  }
+</style>

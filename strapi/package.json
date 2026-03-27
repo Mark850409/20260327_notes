@@ -1,0 +1,28 @@
+{
+  "name": "notes-cms",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Notes CMS powered by Strapi 5",
+  "scripts": {
+    "develop": "strapi develop",
+    "start": "strapi start",
+    "build": "strapi build",
+    "strapi": "strapi"
+  },
+  "dependencies": {
+    "@strapi/plugin-users-permissions": "^5.3.0",
+    "@strapi/strapi": "^5.3.0",
+    "better-sqlite3": "^9.4.3",
+    "gray-matter": "^4.0.3",
+    "mysql2": "^3.9.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "slugify": "^1.6.8",
+    "styled-components": "^6.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0 <=22.x.x",
+    "npm": ">=6.0.0"
+  }
+}

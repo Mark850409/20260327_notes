@@ -1,0 +1,57 @@
+{
+  "kind": "singleType",
+  "collectionName": "site_profiles",
+  "info": {
+    "singularName": "site-profile",
+    "pluralName": "site-profiles",
+    "displayName": "Site Profile",
+    "description": "側欄作者／引言／社群／授權等設定"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "authorLabel": {
+      "type": "string",
+      "default": "Author"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "siteTitle": {
+      "type": "string"
+    },
+    "motto": {
+      "type": "text"
+    },
+    "quote": {
+      "type": "text"
+    },
+    "quoteSource": {
+      "type": "string"
+    },
+    "avatar": {
+      "type": "media",
+      "multiple": false,
+      "allowedTypes": ["images"]
+    },
+    "socialLinks": {
+      "type": "component",
+      "repeatable": true,
+      "component": "shared.social-link"
+    },
+    "licenseImageUrl": {
+      "type": "string"
+    },
+    "licenseHtml": {
+      "type": "richtext"
+    },
+    "postsPerPage": {
+      "type": "integer",
+      "default": 10,
+      "min": 1,
+      "max": 50
+    }
+  }
+}

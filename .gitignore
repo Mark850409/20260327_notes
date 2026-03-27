@@ -1,0 +1,62 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node / JS
+node_modules/
+**/node_modules/
+npm-cache/
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Build outputs
+dist/
+build/
+coverage/
+.cache/
+.turbo/
+tmp/
+temp/
+
+# Astro
+frontend/.astro/
+frontend/dist/
+
+# Strapi
+strapi/.cache/
+strapi/build/
+strapi/dist/
+strapi/.tmp/
+
+# Upload artifacts (keep folder structure only)
+strapi/public/uploads/*
+!strapi/public/uploads/.gitkeep
+
+# Docker / local runtime
+*.pid
+*.seed
+*.pid.lock

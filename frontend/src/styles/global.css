@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply text-base antialiased;
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply min-h-screen font-sans text-zinc-900 transition-colors;
+    @apply bg-zinc-100;
+  }
+  [data-theme='dark'] body {
+    @apply bg-zinc-950 text-zinc-100;
+  }
+}
+
+/* Pygments / codehilite — Markdown 程式碼區塊 */
+@layer components {
+  .article-body .highlight {
+    @apply rounded-lg;
+    background: rgb(39 39 42 / 0.45) !important;
+  }
+  [data-theme='dark'] .article-body .highlight {
+    background: rgb(24 24 27) !important;
+  }
+  .highlight .hll {
+    background: rgba(73, 177, 245, 0.14);
+  }
+  .highlight .c {
+    @apply text-zinc-500 italic;
+  }
+  .highlight .k {
+    @apply text-sky-600;
+  }
+  [data-theme='dark'] .highlight .k {
+    @apply text-sky-300;
+  }
+  .highlight .n {
+    @apply text-inherit;
+  }
+  .highlight .o {
+    @apply text-accent;
+  }
+  .highlight .s {
+    @apply text-sky-800;
+  }
+  [data-theme='dark'] .highlight .s {
+    @apply text-sky-200;
+  }
+  .highlight .m {
+    @apply text-violet-600;
+  }
+  .highlight .nb {
+    @apply text-amber-800;
+  }
+  [data-theme='dark'] .highlight .nb {
+    @apply text-amber-400;
+  }
+  .highlight .nf {
+    @apply text-violet-600;
+  }
+  .highlight .nc {
+    @apply text-emerald-700;
+  }
+  [data-theme='dark'] .highlight .nc {
+    @apply text-emerald-400;
+  }
+  .highlight .nn {
+    @apply text-amber-800;
+  }
+  .highlight .bp {
+    @apply text-zinc-500;
+  }
+}

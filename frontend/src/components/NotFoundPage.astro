@@ -1,0 +1,27 @@
+---
+/**
+ * 共用「頁面不存在」區塊（供 /404 與動態路由真正 HTTP 404 使用）。
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="404 — 頁面不存在">
+  <div class="mx-auto max-w-md px-4 py-16">
+    <div
+      class="rounded-2xl border border-zinc-200 bg-white p-10 text-center shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+    >
+      <p
+        class="mb-3 bg-gradient-to-br from-accent to-sky-400 bg-clip-text text-7xl font-bold leading-none text-transparent"
+      >
+        404
+      </p>
+      <h1 class="text-xl font-semibold text-zinc-900 dark:text-zinc-100">頁面不存在</h1>
+      <p class="mt-2 text-zinc-600 dark:text-zinc-400">您訪問的頁面已移動或不存在。</p>
+      <a
+        href="/"
+        class="mt-6 inline-block rounded-full border border-accent px-5 py-2 text-sm font-semibold text-accent transition hover:bg-accent hover:text-white"
+      >
+        ← 返回首頁
+      </a>
+    </div>
+  </div>
+</BaseLayout>
