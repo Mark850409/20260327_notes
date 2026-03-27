@@ -9,16 +9,51 @@ const path = require('node:path');
 const matter = require('gray-matter');
 const slugify = require('slugify');
 const { createCoreController } = require('@strapi/strapi').factories;
+const {
+  classifyCategoryWithOpenAI,
+  safeFmSummary,
+} = require('../utils/openai-category');
+
+function toStableHash(input) {
+  const str = (input || '').toString();
+  let hash = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    hash ^= str.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function pickFirstString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (Array.isArray(value)) {
+      const nested = pickFirstString(...value);
+      if (nested) return nested;
+    }
+  }
+  return '';
+}
 
 function normalizeSlug(input, fallback = 'note') {
   const base = (input || '').toString().trim() || fallback;
-  return (
-    slugify(base, {
-      lower: true,
-      strict: true,
-      trim: true,
-    }) || `note-${Date.now()}`
-  );
+  const strictSlug = slugify(base, {
+    lower: true,
+    strict: true,
+    trim: true,
+  });
+  if (strictSlug) return strictSlug;
+  const relaxedSlug = slugify(base, {
+    lower: true,
+    strict: false,
+    trim: true,
+  })
+    .replace(/\s+/g, '-')
+    .replace(/[\\/]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  if (relaxedSlug) return relaxedSlug;
+  return `note-${toStableHash(base)}`;
 }
 
 function getFallbackDescription(content) {
@@ -38,11 +73,81 @@ function normalizeFiles(filesField) {
   return [];
 }
 
+function parseCategoryCandidate(fmCategory, fmCategories) {
+  const direct = pickFirstString(fmCategory);
+  if (direct) return direct;
+  if (Array.isArray(fmCategories)) return pickFirstString(...fmCategories);
+  if (typeof fmCategories === 'string') {
+    return pickFirstString(
+      fmCategories
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    );
+  }
+  return '';
+}
+
+function normalizeCategoryName(input) {
+  return (input || '').toString().trim().replace(/\s+/g, ' ');
+}
+
+function pickMeaningfulSegment(input) {
+  return (input || '')
+    .toString()
+    .split(/[\\/]/)
+    .map((x) => normalizeCategoryName(x))
+    .filter((x) => x && !x.endsWith('.md') && x !== '未分類' && x.toLowerCase() !== 'uncategorized')[0];
+}
+
 module.exports = createCoreController('api::article.article', ({ strapi }) => ({
+  async uploadInlineImage(ctx) {
+    try {
+      const files = normalizeFiles(ctx.request.files?.files || ctx.request.files);
+      const file = files[0];
+      if (!file) return ctx.badRequest('No image file uploaded.');
+
+      const mime = (file.type || file.mimetype || '').toLowerCase();
+      if (!mime.startsWith('image/')) {
+        return ctx.badRequest('Only image files are supported.');
+      }
+
+      const uploaded = await strapi.plugin('upload').service('upload').upload({
+        data: {
+          fileInfo: {
+            name: file.originalFilename || file.name || `pasted-${Date.now()}`,
+            alternativeText: file.originalFilename || file.name || 'pasted-image',
+          },
+        },
+        files: file,
+      });
+
+      const item = Array.isArray(uploaded) ? uploaded[0] : uploaded;
+      if (!item?.url) {
+        return ctx.throw(500, 'Upload succeeded but URL is missing.');
+      }
+
+      ctx.body = {
+        url: item.url,
+        name: item.alternativeText || item.name || 'image',
+      };
+    } catch (e) {
+      ctx.throw(500, e.message || 'Inline image upload failed');
+    }
+  },
+
   async importMarkdown(ctx) {
     try {
       const files = normalizeFiles(ctx.request.files?.files || ctx.request.files);
       const body = ctx.request.body || {};
+      const categoryMode = (body.categoryMode || 'ai').toString().trim().toLowerCase() === 'manual' ? 'manual' : 'ai';
+      const manualCategoryInput = pickFirstString(body.manualCategory, body.category, body.categoryName);
+      const categoryCache = new Map();
+      const existingCategoryPool = await strapi.entityService.findMany('api::category.category', {
+        fields: ['id', 'name', 'slug'],
+        sort: { id: 'asc' },
+        limit: 1000,
+      });
 
       let relativePaths = [];
       if (Array.isArray(body.relativePaths)) {
@@ -74,6 +179,66 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       const results = [];
       const summary = { created: 0, updated: 0, failed: 0, skipped: 0 };
 
+      const findOrCreateCategory = async (inputName) => {
+        const resolvedName = pickFirstString(inputName) || '未分類';
+        const catSlug = normalizeSlug(resolvedName, resolvedName);
+        if (categoryCache.has(catSlug)) return categoryCache.get(catSlug);
+        const existingCategories = await strapi.entityService.findMany('api::category.category', {
+          filters: {
+            $or: [{ slug: { $eqi: catSlug } }, { name: { $eqi: resolvedName } }],
+          },
+          limit: 1,
+        });
+        let categoryEntity = existingCategories?.[0] || null;
+        if (!categoryEntity) {
+          categoryEntity = await strapi.entityService.create('api::category.category', {
+            data: {
+              name: resolvedName,
+              slug: catSlug,
+              publishedAt: new Date().toISOString(),
+            },
+          });
+        }
+        const payload = { id: categoryEntity.id, name: categoryEntity.name || resolvedName, slug: categoryEntity.slug || catSlug };
+        categoryCache.set(catSlug, payload);
+        return payload;
+      };
+
+      const resolveAiCategoryName = async ({ relPath, title, description, contentSnippet, fm, fmCategoryCandidate }) => {
+        if (fmCategoryCandidate) {
+          return { name: normalizeCategoryName(fmCategoryCandidate), source: 'fm' };
+        }
+
+        const apiKey = process.env.OPENAI_API_KEY;
+        const model = process.env.OPENAI_MODEL;
+
+        if (!apiKey) {
+          const fallback = pickMeaningfulSegment(relPath) || '未分類';
+          return { name: fallback, source: 'fallback-no-key', detail: 'OPENAI_API_KEY missing' };
+        }
+
+        try {
+          const name = await classifyCategoryWithOpenAI({
+            apiKey,
+            model,
+            title,
+            relPath,
+            description,
+            contentSnippet,
+            fmSummary: safeFmSummary(fm),
+            existingCategories: existingCategoryPool,
+          });
+          return { name: normalizeCategoryName(name) || '未分類', source: 'openai' };
+        } catch (e) {
+          const fallback = pickMeaningfulSegment(relPath) || '未分類';
+          return {
+            name: fallback,
+            source: 'fallback-error',
+            detail: e.message || 'openai error',
+          };
+        }
+      };
+
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
         const fileName = file.originalFilename || file.name || `file-${i}.md`;
@@ -97,36 +262,43 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
           const parsed = matter(raw);
           const fm = parsed.data || {};
           const content = (parsed.content || '').trim();
+          const safeContent = content || `# ${path.basename(fileName, '.md') || 'Untitled'}`;
           const fileBase = path.basename(fileName, '.md');
+          const normalizeNotes = [];
 
-          const title = (fm.title || fileBase || '').toString().trim();
-          const slug = normalizeSlug(fm.slug || title || fileBase, fileBase || 'note');
-          const description = (fm.description || getFallbackDescription(content) || '').toString().trim();
+          const title = pickFirstString(fm.title, fm.name, fm.topic, fileBase) || fileBase || 'Untitled';
+          if (!pickFirstString(fm.title, fm.name, fm.topic)) normalizeNotes.push('title:auto-filled');
+          const slugSource = pickFirstString(fm.slug, fm.permalink, title, fileBase);
+          const slug = normalizeSlug(slugSource, fileBase || 'note');
+          if (!pickFirstString(fm.slug, fm.permalink)) normalizeNotes.push('slug:normalized');
+          const description = pickFirstString(fm.description, fm.desc, fm.summary, getFallbackDescription(content), title);
+          if (!pickFirstString(fm.description, fm.desc, fm.summary)) normalizeNotes.push('description:auto-filled');
+          if (!content) normalizeNotes.push('content:auto-filled');
 
-          const folderSeg = relPath.split(/[\\/]/).filter(Boolean);
-          const fallbackCategoryName = folderSeg.length > 1 ? folderSeg[0] : '';
-          const categoryName = (fm.category || fallbackCategoryName || '').toString().trim();
-
-          let categoryId = null;
-          if (categoryName) {
-            const catSlug = normalizeSlug(categoryName, categoryName);
-            const existingCategories = await strapi.entityService.findMany('api::category.category', {
-              filters: { slug: catSlug },
-              limit: 1,
-            });
-            if (existingCategories?.length) {
-              categoryId = existingCategories[0].id;
-            } else {
-              const createdCategory = await strapi.entityService.create('api::category.category', {
-                data: {
-                  name: categoryName,
-                  slug: catSlug,
-                  publishedAt: new Date().toISOString(),
-                },
-              });
-              categoryId = createdCategory.id;
-            }
+          const fmCategoryCandidate = parseCategoryCandidate(fm.category, fm.categories);
+          const aiResult = await resolveAiCategoryName({
+            relPath,
+            title,
+            description,
+            contentSnippet: safeContent.slice(0, 6000),
+            fm,
+            fmCategoryCandidate,
+          });
+          const categoryName = categoryMode === 'manual' ? manualCategoryInput || '未分類' : aiResult.name;
+          if (categoryMode === 'manual') {
+            normalizeNotes.push('category:manual');
+          } else if (fmCategoryCandidate) {
+            normalizeNotes.push('category:fm');
+          } else if (aiResult.source === 'openai') {
+            normalizeNotes.push('category:openai');
+          } else if (aiResult.source === 'fallback-no-key') {
+            normalizeNotes.push('category:openai-missing-key');
+            if (aiResult.detail) normalizeNotes.push(aiResult.detail);
+          } else {
+            normalizeNotes.push('category:openai-fallback');
+            if (aiResult.detail) normalizeNotes.push(aiResult.detail);
           }
+          const categoryEntity = await findOrCreateCategory(categoryName);
 
           const existingArticles = await strapi.entityService.findMany('api::article.article', {
             filters: { slug },
@@ -137,10 +309,10 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
             title,
             slug,
             description,
-            content,
+            content: safeContent,
             publishedAt: new Date().toISOString(),
           };
-          if (categoryId) payload.category = categoryId;
+          if (categoryEntity?.id) payload.category = categoryEntity.id;
 
           if (existingArticles?.length) {
             const updated = await strapi.entityService.update('api::article.article', existingArticles[0].id, {
@@ -152,7 +324,10 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
               status: 'updated',
               id: updated.id,
               slug,
-              message: 'updated by slug',
+              category: categoryEntity?.name || '-',
+              categoryMode,
+              normalized: normalizeNotes,
+              message: normalizeNotes.length ? `updated by slug (${normalizeNotes.join(', ')})` : 'updated by slug',
             });
           } else {
             const created = await strapi.entityService.create('api::article.article', { data: payload });
@@ -162,7 +337,10 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
               status: 'created',
               id: created.id,
               slug,
-              message: 'created',
+              category: categoryEntity?.name || '-',
+              categoryMode,
+              normalized: normalizeNotes,
+              message: normalizeNotes.length ? `created (${normalizeNotes.join(', ')})` : 'created',
             });
           }
         } catch (e) {
