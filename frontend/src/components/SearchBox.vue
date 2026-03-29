@@ -87,7 +87,9 @@ async function search() {
   if (!q) return
   loading.value = true
   try {
-    const res = await fetch(`/api/articles?q=${encodeURIComponent(q)}&limit=6`)
+    const res = await fetch(`/api/articles?q=${encodeURIComponent(q)}&limit=6`, {
+      credentials: 'include',
+    })
     if (res.ok) {
       const json = await res.json()
       results.value = json.data || []

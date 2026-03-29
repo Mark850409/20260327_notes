@@ -1,8 +1,10 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SearchBox from '../components/SearchBox.vue';
+import { backendFetchInit } from '../lib/backendFetch';
 
 const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
+const beInit = backendFetchInit(Astro.request);
 const siteTitle = import.meta.env.PUBLIC_SITE_TITLE || 'My Notes';
 const siteDesc = import.meta.env.PUBLIC_SITE_DESCRIPTION || '';
 
@@ -18,7 +20,10 @@ let totalPages = 1;
 let postsPerPage = 10;
 
 try {
-  const profRes = await fetch(`${apiBase}/api/site-profile`);
+  const profRes = await fetch(`${apiBase}/api/site-profile`, beInit);
+  if (profRes.status === 401) {
+    return Astro.redirect('/login?reason=session');
+  }
   if (profRes.ok) {
     const j = await profRes.json();
     const n = Number(j.data?.postsPerPage);
@@ -34,9 +39,12 @@ if (tag) qs.set('tag', tag);
 
 try {
   const [artRes, catRes] = await Promise.all([
-    fetch(`${apiBase}/api/articles?${qs.toString()}`),
-    fetch(`${apiBase}/api/categories`),
+    fetch(`${apiBase}/api/articles?${qs.toString()}`, beInit),
+    fetch(`${apiBase}/api/categories`, beInit),
   ]);
+  if (artRes.status === 401 || catRes.status === 401) {
+    return Astro.redirect('/login?reason=session');
+  }
   if (artRes.ok) {
     const j = await artRes.json();
     articles = j.data || [];
@@ -125,7 +133,7 @@ function summaryText(input: string | null): string {
         articles.length === 0 ? (
           <div class="rounded-xl border border-dashed border-zinc-300 bg-white p-12 text-center text-zinc-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
             <p class="mb-2 text-4xl opacity-40">⊘</p>
-            <p>尚無文章。請登入 Strapi CMS 後台新增內容。</p>
+            <p>尚無文章。請至 Strapi 後台建立內容並將「擁有者」設為你的 API 使用者。</p>
             <a
               href="/admin"
               class="mt-4 inline-block rounded-full border border-accent px-4 py-2 text-sm font-medium text-accent hover:bg-accent/10"

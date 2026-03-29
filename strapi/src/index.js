@@ -1,8 +1,18 @@
 'use strict';
 
+const jwt = require('jsonwebtoken');
+
 const {
   transformInlineImagesAny,
 } = require('./api/article/utils/inline-image-upload');
+const { mergeOwnerIntoFilters } = require('./utils/owner-scoped-rest');
+const {
+  buildOwnerRelationValue,
+  mergeNoRowsFilters,
+  resolveOwnerDocumentScope,
+} = require('./utils/owner-document-scope');
+
+const OWNER_SCOPED_CONTENT_TYPES = ['api::article.article', 'api::category.category'];
 
 module.exports = {
   /**
@@ -26,7 +36,94 @@ module.exports = {
           policies: [],
         },
       },
+      /**
+       * 批次匯入頁下拉選單：Content Manager 對 plugin::users-permissions.user 常回 401，
+       * 改由已登入管理員 JWT（Cookie jwtToken 或 Authorization Bearer）換取安全欄位清單。
+       */
+      {
+        method: 'GET',
+        path: '/notes-import/api-users',
+        async handler(ctx) {
+          const secret = strapi.config.get('admin.auth.secret');
+          const bearer = (ctx.request.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+          const token = bearer || ctx.cookies.get('jwtToken') || '';
+          if (!secret || !token) {
+            return ctx.unauthorized('Missing or invalid credentials');
+          }
+          try {
+            jwt.verify(token, secret);
+          } catch {
+            return ctx.unauthorized('Missing or invalid credentials');
+          }
+          try {
+            const rows = await strapi.db.query('plugin::users-permissions.user').findMany({
+              orderBy: { username: 'asc' },
+              limit: 500,
+            });
+            const data = (rows || []).map((r) => ({
+              id: r.id,
+              username: r.username,
+              email: r.email,
+            }));
+            ctx.set('Content-Type', 'application/json');
+            ctx.body = { data };
+          } catch (e) {
+            strapi.log.error(`[notes-import/api-users] ${e.message}`);
+            ctx.throw(500, e.message);
+          }
+        },
+        config: {
+          auth: false,
+          policies: [],
+        },
+      },
     ]);
+
+    /**
+     * 後台 Content Manager 走 Document Service：依「管理員 email = API 使用者 email」篩選 owner；
+     * /api/* 且已 JWT 登入時併入同一套 owner 篩選（與自訂 controller 並存為 $and，不重複則等價）。
+     * 設 STRAPI_CM_OWNER_SCOPE_DISABLED=true 可關閉（除錯／遷移用）。
+     */
+    strapi.documents.use(async (context, next) => {
+      if (process.env.STRAPI_CM_OWNER_SCOPE_DISABLED === 'true') {
+        return next();
+      }
+      if (!OWNER_SCOPED_CONTENT_TYPES.includes(context.uid)) {
+        return next();
+      }
+
+      const scope = await resolveOwnerDocumentScope(strapi);
+      if (scope.mode === 'none') {
+        return next();
+      }
+
+      const { action, params } = context;
+      if (!params || typeof params !== 'object') {
+        return next();
+      }
+
+      if (scope.mode === 'empty') {
+        if (['findMany', 'findFirst', 'count', 'findOne', 'update', 'delete'].includes(action)) {
+          params.filters = mergeNoRowsFilters(params.filters);
+        }
+        return next();
+      }
+
+      if (scope.mode === 'owner') {
+        const uid = scope.userId;
+        if (['findMany', 'findFirst', 'count', 'findOne', 'update', 'delete'].includes(action)) {
+          params.filters = mergeOwnerIntoFilters(params.filters, uid);
+        } else if (action === 'create' && params.data && params.data.owner == null) {
+          try {
+            params.data.owner = await buildOwnerRelationValue(strapi, uid);
+          } catch (e) {
+            strapi.log.warn(`[owner-document-scope] create default owner: ${e.message}`);
+          }
+        }
+      }
+
+      return next();
+    });
   },
 
   /**
@@ -74,10 +171,36 @@ module.exports = {
     strapi.db.lifecycles.subscribe({
       models: ['api::article.article'],
       async beforeCreate(event) {
+        const data = event?.params?.data;
+        if (data && (data.owner === undefined || data.owner === null)) {
+          const def = process.env.STRAPI_DEFAULT_ARTICLE_OWNER_ID;
+          if (def) {
+            const n = parseInt(String(def).trim(), 10);
+            if (!Number.isNaN(n) && n > 0) {
+              data.owner = await buildOwnerRelationValue(strapi, n);
+            }
+          }
+        }
         await processInlinePastedImages(event);
       },
       async beforeUpdate(event) {
         await processInlinePastedImages(event);
+      },
+    });
+
+    strapi.db.lifecycles.subscribe({
+      models: ['api::category.category'],
+      async beforeCreate(event) {
+        const data = event?.params?.data;
+        if (data && (data.owner === undefined || data.owner === null)) {
+          const def = process.env.STRAPI_DEFAULT_ARTICLE_OWNER_ID;
+          if (def) {
+            const n = parseInt(String(def).trim(), 10);
+            if (!Number.isNaN(n) && n > 0) {
+              data.owner = await buildOwnerRelationValue(strapi, n);
+            }
+          }
+        }
       },
     });
   },

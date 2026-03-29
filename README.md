@@ -44,13 +44,28 @@
 
    | 用途 | 網址 |
    |------|------|
-   | 網站入口（主站） | http://localhost |
-   | Strapi 管理後台 | http://localhost/admin（或依 Nginx 設定） |
+   | 網站入口（主站） | 預設 `http://localhost`；若 `.env` 設定 `NGINX_HTTP_PORT=9080` 等自訂埠，請用 **`http://localhost:該埠`**（勿省略埠，否則會連到 80 而拒絕連線） |
+   | Strapi 管理後台 | 同上主站網址後接 `/admin`（例如 `http://localhost:9080/admin`） |
    | Strapi API（直連） | http://localhost:1337 |
    | Flask API（直連） | http://localhost:5000/api/health |
    | Astro（直連，除錯用） | http://localhost:4321 |
 
-首次使用請至 Strapi 建立管理員帳號，並在 **Settings → Users & Permissions → Roles → Public** 開放 Article／Category 等 Content API 的 `find`／`findOne`（依實際需求調整）。
+首次使用請至 Strapi 建立**管理員**帳號；另在 **Settings → Users & Permissions → Users** 建立至少一個**前台／API 使用者**（與管理員不同），用於網站登入。
+
+**Content API 權限（必做）**
+
+1. **Public**：取消勾選 **Article**、**Category** 的 `find`、`findOne`（未登入不可讀）。
+2. **Authenticated**（或你的自訂角色）：勾選 **Article**、**Category** 的 `find`／`findOne`，以及 **Site-profile** `find`（單一型別）。
+
+**文章**與**分類**皆已新增 **owner**（擁有者）：REST 建立時會自動帶入目前 JWT 使用者；前台僅會看到自己擁有的分類。內容管理員手動建立時請指定擁有者，或設定環境變數 `STRAPI_DEFAULT_ARTICLE_OWNER_ID`（文章與分類新建未填時皆會套用）。
+
+後台「批次匯入筆記」的分類下拉選單改為呼叫 **Content Manager** API（沿用管理員登入），不依賴公開 `/api/categories`；匯入時建立／配對的分類會帶入該次匯入的 **API 使用者 ID（ownerId）**。若與其他使用者撞 `slug`，會自動改為 `原slug-u{ownerId}`。
+
+網站入口會導向 `/login`，登入成功後 Flask 會寫入 HttpOnly Cookie `notes_auth`，SSR 會轉發至 Strapi。
+
+升級後若資料庫裡已有文章或分類但 **owner 為空**，前台不會顯示；請在內容管理員補上擁有者，或刪除後重建。
+
+登入後仍看不到文章時，請確認該篇 **擁有者** 與你登入的 **API 使用者**為同一人（後台列表「OWNER」欄位）；文章 API 已改為用 `entityService` 依 `owner.id` 篩選，與 JWT 的 `id` 必須一致。
 
 ## 環境變數摘要
 

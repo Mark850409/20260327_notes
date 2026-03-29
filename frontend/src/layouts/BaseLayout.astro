@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import Sidebar from '../components/Sidebar.vue';
 import ThemeToggle from '../components/ThemeToggle.vue';
+import { backendFetchInit } from '../lib/backendFetch';
 
 interface Props {
   title?: string;
@@ -17,6 +18,7 @@ const {
 
 const siteTitle = import.meta.env.PUBLIC_SITE_TITLE || 'My Notes';
 const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
+const beInit = backendFetchInit(Astro.request);
 
 let categories: any[] = [];
 let siteProfile: Record<string, any> = {};
@@ -25,11 +27,11 @@ let stats = { posts: 0, categories: 0, tags: 0 };
 
 try {
   const [profRes, artMetaRes, catRes, tagRes, recentRes] = await Promise.all([
-    fetch(`${apiBase}/api/site-profile`),
-    fetch(`${apiBase}/api/articles?page=1&limit=1`),
-    fetch(`${apiBase}/api/categories`),
-    fetch(`${apiBase}/api/tags`),
-    fetch(`${apiBase}/api/articles?page=1&limit=5`),
+    fetch(`${apiBase}/api/site-profile`, beInit),
+    fetch(`${apiBase}/api/articles?page=1&limit=1`, beInit),
+    fetch(`${apiBase}/api/categories`, beInit),
+    fetch(`${apiBase}/api/tags`, beInit),
+    fetch(`${apiBase}/api/articles?page=1&limit=5`, beInit),
   ]);
 
   if (profRes.ok) {
@@ -112,6 +114,13 @@ try {
             <span class="w-9 shrink-0" aria-hidden="true" />
           )}
           <div class="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              id="notes-logout"
+              class="rounded-lg px-2 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              登出
+            </button>
             <ThemeToggle client:load />
           </div>
         </header>
@@ -144,6 +153,20 @@ try {
         ) {
           sidebar.classList.remove('open');
         }
+      });
+
+      document.getElementById('notes-logout')?.addEventListener('click', async () => {
+        try {
+          await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        } catch {
+          /* ignore */
+        }
+        try {
+          localStorage.removeItem('notes_session');
+        } catch {
+          /* ignore */
+        }
+        window.location.href = '/login';
       });
     </script>
   </body>

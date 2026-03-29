@@ -13,6 +13,8 @@ const {
   classifyCategoryWithOpenAI,
   safeFmSummary,
 } = require('../utils/openai-category');
+const { mergeOwnerIntoFilters, getStartLimitFromSanitized } = require('../../../utils/owner-scoped-rest');
+const { buildOwnerRelationValue } = require('../../../utils/owner-document-scope');
 
 function toStableHash(input) {
   const str = (input || '').toString();
@@ -239,6 +241,23 @@ async function findRootFolderRowByName(strapi, name) {
   return rootish || rows[0] || null;
 }
 
+function resolveImportOwnerId(ctx) {
+  const body = ctx.request.body || {};
+  if (ctx.state.user?.id != null) return ctx.state.user.id;
+  const raw = pickFirstString(body.ownerId, body.owner_id);
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  const envId =
+    process.env.STRAPI_DEFAULT_ARTICLE_OWNER_ID || process.env.STRAPI_IMPORT_DEFAULT_OWNER_ID;
+  if (envId) {
+    const n = parseInt(String(envId).trim(), 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return null;
+}
+
 async function findOrCreateRootFolderId(strapi, rawName, mustCreate) {
   const name = sanitizeMediaFileLabel(rawName).slice(0, 255);
   if (!name) return { id: null };
@@ -266,6 +285,109 @@ async function findOrCreateRootFolderId(strapi, rawName, mustCreate) {
 }
 
 module.exports = createCoreController('api::article.article', ({ strapi }) => ({
+  async find(ctx) {
+    if (!ctx.state.user) {
+      return ctx.unauthorized('請先登入（使用者與權限 JWT）');
+    }
+    const userId = ctx.state.user.id;
+    await this.validateQuery(ctx);
+    const sanitizedQuery = await this.sanitizeQuery(ctx);
+    const mergedFilters = mergeOwnerIntoFilters(sanitizedQuery.filters, userId);
+    const { start, limit } = getStartLimitFromSanitized(sanitizedQuery, ctx.query);
+
+    const results = await strapi.entityService.findMany('api::article.article', {
+      filters: mergedFilters,
+      populate: sanitizedQuery.populate,
+      sort: sanitizedQuery.sort,
+      limit,
+      start,
+    });
+
+    let total = results.length;
+    try {
+      total = await strapi.entityService.count('api::article.article', {
+        filters: mergedFilters,
+      });
+    } catch (e) {
+      strapi.log.warn(`[article.find] entityService.count: ${e.message}`);
+    }
+
+    const page = Math.floor(start / limit) + 1;
+    const pageSize = limit;
+    const pageCount = Math.ceil(total / pageSize) || 1;
+    const pagination = { page, pageSize, pageCount, total };
+
+    const sanitizedResults = await this.sanitizeOutput(results, ctx);
+    return this.transformResponse(sanitizedResults, { pagination });
+  },
+
+  async findOne(ctx) {
+    if (!ctx.state.user) {
+      return ctx.unauthorized('請先登入（使用者與權限 JWT）');
+    }
+    const userId = ctx.state.user.id;
+    const { id } = ctx.params;
+    await this.validateQuery(ctx);
+    const sanitizedQuery = await this.sanitizeQuery(ctx);
+
+    const entity = await strapi.entityService.findOne('api::article.article', id, {
+      filters: { owner: { id: userId } },
+      populate: sanitizedQuery.populate,
+    });
+    if (!entity) {
+      return ctx.notFound();
+    }
+    const sanitizedEntity = await this.sanitizeOutput(entity, ctx);
+    return this.transformResponse(sanitizedEntity);
+  },
+
+  async create(ctx) {
+    if (!ctx.state.user) {
+      return ctx.unauthorized('請先登入（使用者與權限 JWT）');
+    }
+    const raw = ctx.request.body || {};
+    const data = { ...(raw.data && typeof raw.data === 'object' ? raw.data : {}) };
+    data.owner = await buildOwnerRelationValue(strapi, ctx.state.user.id);
+    ctx.request.body = { ...raw, data };
+    return super.create(ctx);
+  },
+
+  async update(ctx) {
+    if (!ctx.state.user) {
+      return ctx.unauthorized('請先登入（使用者與權限 JWT）');
+    }
+    const userId = ctx.state.user.id;
+    const { id } = ctx.params;
+    const existing = await strapi.entityService.findOne('api::article.article', id, {
+      filters: { owner: { id: userId } },
+    });
+    if (!existing) {
+      return ctx.notFound();
+    }
+    const raw = ctx.request.body || {};
+    if (raw.data && typeof raw.data === 'object' && Object.prototype.hasOwnProperty.call(raw.data, 'owner')) {
+      const next = { ...raw, data: { ...raw.data } };
+      delete next.data.owner;
+      ctx.request.body = next;
+    }
+    return super.update(ctx);
+  },
+
+  async delete(ctx) {
+    if (!ctx.state.user) {
+      return ctx.unauthorized('請先登入（使用者與權限 JWT）');
+    }
+    const userId = ctx.state.user.id;
+    const { id } = ctx.params;
+    const existing = await strapi.entityService.findOne('api::article.article', id, {
+      filters: { owner: { id: userId } },
+    });
+    if (!existing) {
+      return ctx.notFound();
+    }
+    return super.delete(ctx);
+  },
+
   async uploadInlineImage(ctx) {
     try {
       const files = normalizeFiles(ctx.request.files?.files || ctx.request.files);
@@ -340,11 +462,6 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       const categoryMode = (body.categoryMode || 'ai').toString().trim().toLowerCase() === 'manual' ? 'manual' : 'ai';
       const manualCategoryInput = pickFirstString(body.manualCategory, body.category, body.categoryName);
       const categoryCache = new Map();
-      const existingCategoryPool = await strapi.entityService.findMany('api::category.category', {
-        fields: ['id', 'name', 'slug'],
-        sort: { id: 'asc' },
-        limit: 1000,
-      });
 
       let relativePaths = [];
       if (Array.isArray(body.relativePaths)) {
@@ -365,6 +482,22 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
         return ctx.badRequest('No markdown files uploaded.');
       }
 
+      const importOwnerId = resolveImportOwnerId(ctx);
+      if (importOwnerId == null) {
+        return ctx.badRequest(
+          '匯入需指定文章擁有者：請在表單填寫「API 使用者 ID（ownerId）」、或使用 API 使用者 JWT，或在環境變數設定 STRAPI_DEFAULT_ARTICLE_OWNER_ID。',
+        );
+      }
+
+      const ownerRelation = await buildOwnerRelationValue(strapi, importOwnerId);
+
+      const existingCategoryPool = await strapi.entityService.findMany('api::category.category', {
+        filters: { owner: { id: importOwnerId } },
+        fields: ['id', 'name', 'slug'],
+        sort: { id: 'asc' },
+        limit: 1000,
+      });
+
       const relativePathQueues = new Map();
       for (const p of relativePaths) {
         const key = path.basename(String(p || '')).toLowerCase();
@@ -379,25 +512,58 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       const findOrCreateCategory = async (inputName) => {
         const resolvedName = pickFirstString(inputName) || '未分類';
         const catSlug = normalizeSlug(resolvedName, resolvedName);
-        if (categoryCache.has(catSlug)) return categoryCache.get(catSlug);
+        const cacheKey = `${importOwnerId}:${catSlug}`;
+        if (categoryCache.has(cacheKey)) return categoryCache.get(cacheKey);
+
         const existingCategories = await strapi.entityService.findMany('api::category.category', {
           filters: {
-            $or: [{ slug: { $eqi: catSlug } }, { name: { $eqi: resolvedName } }],
+            $and: [
+              { owner: { id: importOwnerId } },
+              { $or: [{ slug: { $eqi: catSlug } }, { name: { $eqi: resolvedName } }] },
+            ],
           },
           limit: 1,
         });
         let categoryEntity = existingCategories?.[0] || null;
+
         if (!categoryEntity) {
-          categoryEntity = await strapi.entityService.create('api::category.category', {
-            data: {
-              name: resolvedName,
-              slug: catSlug,
-              publishedAt: new Date().toISOString(),
-            },
-          });
+          const baseData = {
+            name: resolvedName,
+            slug: catSlug,
+            owner: ownerRelation,
+            publishedAt: new Date().toISOString(),
+          };
+          try {
+            categoryEntity = await strapi.entityService.create('api::category.category', {
+              data: baseData,
+            });
+          } catch (e) {
+            const msg = `${e.message || ''} ${e.name || ''}`.toLowerCase();
+            const isUnique =
+              msg.includes('unique') ||
+              msg.includes('duplicate') ||
+              msg.includes('validation') ||
+              msg.includes('slug');
+            if (!isUnique) throw e;
+            const suffix = `-u${importOwnerId}`;
+            const maxLen = 255;
+            const trimmedBase = catSlug.slice(0, Math.max(1, maxLen - suffix.length));
+            const altSlug = `${trimmedBase}${suffix}`;
+            categoryEntity = await strapi.entityService.create('api::category.category', {
+              data: {
+                ...baseData,
+                slug: altSlug,
+              },
+            });
+          }
         }
-        const payload = { id: categoryEntity.id, name: categoryEntity.name || resolvedName, slug: categoryEntity.slug || catSlug };
-        categoryCache.set(catSlug, payload);
+
+        const payload = {
+          id: categoryEntity.id,
+          name: categoryEntity.name || resolvedName,
+          slug: categoryEntity.slug || catSlug,
+        };
+        categoryCache.set(cacheKey, payload);
         return payload;
       };
 
@@ -498,7 +664,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
           const categoryEntity = await findOrCreateCategory(categoryName);
 
           const existingArticles = await strapi.entityService.findMany('api::article.article', {
-            filters: { slug },
+            filters: { slug, owner: { id: importOwnerId } },
             limit: 1,
           });
 
@@ -508,6 +674,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
             description,
             content: safeContent,
             publishedAt: new Date().toISOString(),
+            owner: ownerRelation,
           };
           if (categoryEntity?.id) payload.category = categoryEntity.id;
 

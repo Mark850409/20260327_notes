@@ -4,6 +4,8 @@ import requests as http
 from flask_openapi3 import APIBlueprint, Tag
 from flask import jsonify
 
+from ..strapi_proxy import strapi_auth_headers
+
 categories_bp = APIBlueprint("categories", __name__, url_prefix="/api")
 _tag = Tag(name="Categories", description="Category management")
 
@@ -16,8 +18,11 @@ def list_categories():
         resp = http.get(
             f"{STRAPI}/api/categories",
             params={"sort": "name:asc", "pagination[pageSize]": 100},
+            headers=strapi_auth_headers(),
             timeout=10,
         )
+        if resp.status_code in (401, 403):
+            return jsonify({"error": "unauthorized", "data": []}), 401
         resp.raise_for_status()
         items = resp.json().get("data") or []
     except Exception as e:

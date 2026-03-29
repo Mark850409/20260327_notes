@@ -5,15 +5,20 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import NotFoundPage from '../../components/NotFoundPage.astro';
 import TableOfContents from '../../components/TableOfContents.vue';
 import ArticleSyntaxHighlight from '../../components/ArticleSyntaxHighlight.vue';
+import { backendFetchInit } from '../../lib/backendFetch';
 
 const { slug } = Astro.params;
 const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
+const beInit = backendFetchInit(Astro.request);
 
 let article = null;
 let error   = null;
 
 try {
-  const res = await fetch(`${apiBase}/api/articles/${slug}`);
+  const res = await fetch(`${apiBase}/api/articles/${slug}`, beInit);
+  if (res.status === 401) {
+    return Astro.redirect('/login?reason=session');
+  }
   if (res.ok) {
     const json = await res.json();
     article = json.data;

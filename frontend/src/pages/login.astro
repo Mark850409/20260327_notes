@@ -1,0 +1,190 @@
+---
+import '../styles/global.css';
+import ThemeToggle from '../components/ThemeToggle.vue';
+
+const siteTitle = import.meta.env.PUBLIC_SITE_TITLE || 'My Notes';
+let next = Astro.url.searchParams.get('next') || '/';
+if (!next.startsWith('/') || next.startsWith('//')) next = '/';
+const reason = Astro.url.searchParams.get('reason') || '';
+---
+<!DOCTYPE html>
+<html lang="zh-TW" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>登入 — {siteTitle}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body class="login-page min-h-screen font-sans text-zinc-900 antialiased dark:text-zinc-100">
+    <div class="login-bg" aria-hidden="true"></div>
+    <div class="login-noise" aria-hidden="true"></div>
+
+    <div class="relative z-10 mx-auto flex min-h-screen max-w-lg flex-col justify-center px-4 py-12 sm:px-6">
+      <header class="mb-10 flex items-start justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div
+            class="login-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/90 shadow-md shadow-accent/10 ring-1 ring-zinc-200/80 dark:bg-zinc-900/90 dark:ring-zinc-700/80"
+          >
+            <svg class="h-6 w-6 text-accent" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M8 5h10a2 2 0 012 2v12l-6-3-6 3V7a2 2 0 012-2z"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linejoin="round"></path>
+              <path d="M8 5H6a2 2 0 00-2 2v12l4-2" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"></path>
+            </svg>
+          </div>
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">Knowledge base</p>
+            <h1 class="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">{siteTitle}</h1>
+          </div>
+        </div>
+        <ThemeToggle client:load />
+      </header>
+
+      <div
+        class="login-card rounded-3xl border border-white/60 bg-white/75 p-8 shadow-xl shadow-zinc-900/[0.06] ring-1 ring-zinc-900/[0.04] backdrop-blur-xl dark:border-zinc-700/50 dark:bg-zinc-900/70 dark:shadow-black/40 dark:ring-white/[0.06] sm:p-10"
+      >
+        <h2 class="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">登入閱讀筆記</h2>
+        <p class="mt-2 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
+          請使用 Strapi「使用者與權限」中的帳號（非管理員後台帳號）。
+        </p>
+
+        {
+          reason === 'session' && (
+            <p class="mt-5 rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/25 dark:bg-amber-950/35 dark:text-amber-100">
+              工作階段已失效或未授權，請重新登入。
+            </p>
+          )
+        }
+
+        <form id="login-form" class="mt-8 flex flex-col gap-5">
+          <label class="block">
+            <span class="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
+              >Email 或使用者名稱</span
+            >
+            <input
+              type="text"
+              name="identifier"
+              required
+              autocomplete="username"
+              class="login-input w-full rounded-xl border border-zinc-200/90 bg-white/90 px-4 py-3 text-[15px] text-zinc-900 shadow-inner shadow-zinc-900/[0.03] outline-none transition placeholder:text-zinc-400 focus:border-accent focus:ring-2 focus:ring-accent/25 dark:border-zinc-600 dark:bg-zinc-950/80 dark:text-zinc-100 dark:shadow-none dark:focus:border-accent dark:focus:ring-accent/30"
+              placeholder="name@example.com"
+            />
+          </label>
+          <label class="block">
+            <span class="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">密碼</span>
+            <input
+              type="password"
+              name="password"
+              required
+              autocomplete="current-password"
+              class="login-input w-full rounded-xl border border-zinc-200/90 bg-white/90 px-4 py-3 text-[15px] text-zinc-900 shadow-inner shadow-zinc-900/[0.03] outline-none transition placeholder:text-zinc-400 focus:border-accent focus:ring-2 focus:ring-accent/25 dark:border-zinc-600 dark:bg-zinc-950/80 dark:text-zinc-100 dark:shadow-none dark:focus:border-accent dark:focus:ring-accent/30"
+              placeholder="••••••••"
+            />
+          </label>
+          <p id="login-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-200" role="alert"></p>
+          <button
+            type="submit"
+            class="login-submit mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent-dim to-accent py-3.5 text-sm font-semibold text-white shadow-lg shadow-accent/25 transition hover:brightness-105 hover:shadow-accent/35 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55 disabled:shadow-none"
+          >
+            <span>登入</span>
+            <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5 12h14M13 6l6 6-6 6"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"></path>
+            </svg>
+          </button>
+        </form>
+      </div>
+
+      <p class="mt-10 text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-500">
+        管理內容請至
+        <a
+          href="/admin/"
+          class="font-medium text-accent underline decoration-accent/30 underline-offset-2 transition hover:decoration-accent"
+          >Strapi 後台</a
+        >
+      </p>
+    </div>
+
+    <style is:global>
+      .login-page {
+        position: relative;
+        overflow-x: hidden;
+      }
+      .login-bg {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        background:
+          radial-gradient(1200px 800px at 15% 10%, rgba(73, 177, 245, 0.22), transparent 55%),
+          radial-gradient(900px 700px at 85% 20%, rgba(99, 102, 241, 0.12), transparent 50%),
+          radial-gradient(800px 600px at 50% 100%, rgba(56, 189, 248, 0.08), transparent 45%),
+          linear-gradient(165deg, #f4f4f5 0%, #e4e4e7 48%, #fafafa 100%);
+      }
+      [data-theme='dark'] .login-bg {
+        background:
+          radial-gradient(1000px 700px at 20% 0%, rgba(73, 177, 245, 0.12), transparent 50%),
+          radial-gradient(800px 600px at 90% 30%, rgba(99, 102, 241, 0.1), transparent 45%),
+          linear-gradient(165deg, #09090b 0%, #18181b 50%, #0c0c0e 100%);
+      }
+      .login-noise {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        opacity: 0.035;
+        pointer-events: none;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+      [data-theme='dark'] .login-noise {
+        opacity: 0.06;
+      }
+    </style>
+
+    <script is:inline define:vars={{ next }}>
+      const form = document.getElementById('login-form');
+      const errEl = document.getElementById('login-error');
+      form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!errEl) return;
+        errEl.classList.add('hidden');
+        errEl.textContent = '';
+        const fd = new FormData(form);
+        const identifier = (fd.get('identifier') || '').toString().trim();
+        const password = (fd.get('password') || '').toString();
+        const btn = form.querySelector('button[type="submit"]');
+        if (btn instanceof HTMLButtonElement) btn.disabled = true;
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identifier, password }),
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            errEl.textContent = j.error || `登入失敗（${res.status}）`;
+            errEl.classList.remove('hidden');
+            return;
+          }
+          try {
+            localStorage.setItem('notes_session', '1');
+          } catch {
+            /* ignore */
+          }
+          const dest = typeof next === 'string' && next.startsWith('/') ? next : '/';
+          window.location.href = dest;
+        } catch {
+          errEl.textContent = '無法連線，請稍後再試。';
+          errEl.classList.remove('hidden');
+        } finally {
+          if (btn instanceof HTMLButtonElement) btn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

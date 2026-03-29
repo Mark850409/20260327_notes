@@ -240,7 +240,9 @@ async function toggleCat(slug) {
 
 async function loadCatArticles(slug) {
   try {
-    const res = await fetch(`${apiBase.value}/articles?category=${slug}&limit=30`)
+    const res = await fetch(`${apiBase.value}/articles?category=${slug}&limit=30`, {
+      credentials: 'include',
+    })
     if (res.ok) {
       const json = await res.json()
       catArticles.value[slug] = json.data || []

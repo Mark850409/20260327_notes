@@ -4,6 +4,8 @@ import requests as http
 from flask_openapi3 import APIBlueprint, Tag
 from flask import jsonify
 
+from ..strapi_proxy import strapi_auth_headers
+
 site_profile_bp = APIBlueprint("site_profile", __name__, url_prefix="/api")
 _tag = Tag(name="SiteProfile", description="Site sidebar profile from Strapi")
 
@@ -89,8 +91,11 @@ def get_site_profile():
         resp = http.get(
             f"{STRAPI}/api/site-profile",
             params={"populate": "*"},
+            headers=strapi_auth_headers(),
             timeout=10,
         )
+        if resp.status_code in (401, 403):
+            return jsonify({"error": "unauthorized", "data": {}}), 401
         resp.raise_for_status()
         body = resp.json()
     except Exception as e:

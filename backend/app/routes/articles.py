@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 from typing import Optional
 import markdown as md_lib
 
+from ..strapi_proxy import strapi_auth_headers
+
 articles_bp = APIBlueprint("articles", __name__, url_prefix="/api")
 _tag = Tag(name="Articles", description="Article listing and search")
 
@@ -75,7 +77,14 @@ def list_articles(query: ArticleListQuery):
         params["filters[tags][slug][$eq]"] = query.tag
 
     try:
-        resp = http.get(f"{STRAPI}/api/articles", params=params, timeout=10)
+        resp = http.get(
+            f"{STRAPI}/api/articles",
+            params=params,
+            headers=strapi_auth_headers(),
+            timeout=10,
+        )
+        if resp.status_code in (401, 403):
+            return jsonify({"error": "unauthorized", "data": [], "meta": {}}), 401
         resp.raise_for_status()
         body = resp.json()
     except Exception as e:
@@ -99,11 +108,15 @@ class ArticlePath(BaseModel):
 def _strapi_find_article_by_path_segment(segment: str):
     """先依 slug、再依 title 查 Strapi（分兩次請求，避免 $or 查詢字串與 Strapi 5 不相容）。"""
     base = {"populate": "*"}
+    headers = strapi_auth_headers()
     r = http.get(
         f"{STRAPI}/api/articles",
         params={**base, "filters[slug][$eq]": segment},
+        headers=headers,
         timeout=10,
     )
+    if r.status_code in (401, 403):
+        raise PermissionError("unauthorized")
     r.raise_for_status()
     items = r.json().get("data") or []
     if items:
@@ -111,8 +124,11 @@ def _strapi_find_article_by_path_segment(segment: str):
     r2 = http.get(
         f"{STRAPI}/api/articles",
         params={**base, "filters[title][$eq]": segment},
+        headers=headers,
         timeout=10,
     )
+    if r2.status_code in (401, 403):
+        raise PermissionError("unauthorized")
     r2.raise_for_status()
     items = r2.json().get("data") or []
     return items[0] if items else None
@@ -125,6 +141,8 @@ def get_article(path: ArticlePath):
     slug = path.slug
     try:
         item = _strapi_find_article_by_path_segment(slug)
+    except PermissionError:
+        return jsonify({"error": "unauthorized"}), 401
     except Exception as e:
         return jsonify({"error": str(e)}), 503
 

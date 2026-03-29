@@ -49,6 +49,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       INLINE_IMAGE_MAX_BYTES: ${INLINE_IMAGE_MAX_BYTES:-5242880}
+      # 後台／匯入建立文章時若未指定 owner，可預設為某個 users-permissions 使用者 id（選填）
+      STRAPI_DEFAULT_ARTICLE_OWNER_ID: ${STRAPI_DEFAULT_ARTICLE_OWNER_ID:-}
       # 關閉 Admin HMR 時改為 "true"（需手動重整頁面）。預設不設＝可熱更新。
       STRAPI_ADMIN_DISABLE_HMR: ${STRAPI_ADMIN_DISABLE_HMR:-}
       # Vite 6+ Host 檢查：經 NAS DDNS 請設白名單或留空（見 .env.example）

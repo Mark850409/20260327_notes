@@ -7,6 +7,44 @@ function toReadableSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** 後台自訂 API 與 CM 請求：附 Cookie，並盡量帶上 admin JWT（Strapi 多存在 localStorage jwtToken） */
+function notesImportFetchInit() {
+  const headers = { Accept: 'application/json' };
+  try {
+    const raw =
+      (typeof localStorage !== 'undefined' && localStorage.getItem('jwtToken')) ||
+      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('jwtToken')) ||
+      null;
+    if (raw) {
+      let token = raw;
+      try {
+        token = JSON.parse(raw);
+      } catch {
+        /* 已是純字串 */
+      }
+      if (typeof token === 'string' && token.trim()) {
+        headers.Authorization = `Bearer ${token.trim()}`;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return { credentials: 'include', headers };
+}
+
+/** Content Manager 列 → 匯入用 ownerId（數字 id）與顯示標籤 */
+function mapCmUserRow(row) {
+  const attrs = row?.attributes || row || {};
+  const id = row?.id ?? attrs?.id;
+  if (id == null || id === '') return null;
+  const username = (attrs?.username ?? row?.username ?? '').toString().trim();
+  const email = (attrs?.email ?? row?.email ?? '').toString().trim();
+  let label = '';
+  if (username && email) label = `${username} · ${email}`;
+  else label = username || email || `使用者（id ${id}）`;
+  return { value: String(id), label };
+}
+
 export default function NotesImportPage() {
   const filesInputRef = useRef(null);
   const dirInputRef = useRef(null);
@@ -22,40 +60,65 @@ export default function NotesImportPage() {
   const [progressLabel, setProgressLabel] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [ownerUserId, setOwnerUserId] = useState('');
+  const [ownerOptions, setOwnerOptions] = useState([]);
+  const [ownerLoading, setOwnerLoading] = useState(false);
+  const [ownerError, setOwnerError] = useState('');
 
   const totalSize = useMemo(() => items.reduce((s, i) => s + (i.file?.size || 0), 0), [items]);
 
   useEffect(() => {
     let mounted = true;
-    async function loadCategories() {
+    async function loadCmData() {
       setCategoryLoading(true);
+      setOwnerLoading(true);
       setCategoryError('');
+      setOwnerError('');
+      const catUid = encodeURIComponent('api::category.category');
+      const catUrl = `/content-manager/collection-types/${catUid}?page=1&pageSize=200&sort=name:ASC`;
+      const userUrl = '/notes-import/api-users';
+
       try {
-        const res = await fetch('/api/categories?pagination[pageSize]=200&sort=name:asc', {
-          credentials: 'include',
-        });
+        const res = await fetch(catUrl, notesImportFetchInit());
         const j = await res.json().catch(() => ({}));
-        if (!res.ok || j.error) throw new Error(j.error || `分類載入失敗 (${res.status})`);
-        const rows = Array.isArray(j?.data) ? j.data : [];
+        if (!res.ok || j.error) throw new Error(j.error?.message || j.error || `分類載入失敗 (${res.status})`);
+        const rows = Array.isArray(j.results) ? j.results : Array.isArray(j.data) ? j.data : [];
         const mapped = rows
           .map((row) => {
             const attrs = row?.attributes || row || {};
-            const name = (attrs?.name || '').toString().trim();
+            const name = (attrs?.name ?? row?.name ?? '').toString().trim();
             if (!name) return null;
             return { value: name, label: name };
           })
           .filter(Boolean);
         if (mounted) {
           setCategoryOptions(mapped);
-          if (mapped.length && !manualCategory) setManualCategory(mapped[0].value);
+          setManualCategory((prev) => (prev || (mapped.length ? mapped[0].value : '')));
         }
       } catch (e) {
         if (mounted) setCategoryError(e?.message || '分類載入失敗');
-      } finally {
-        if (mounted) setCategoryLoading(false);
+      }
+
+      try {
+        const res = await fetch(userUrl, notesImportFetchInit());
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || j.error) {
+          const msg = j.error?.message || j.error || `使用者清單載入失敗 (${res.status})`;
+          throw new Error(msg);
+        }
+        const rows = Array.isArray(j.data) ? j.data : [];
+        const mapped = rows.map(mapCmUserRow).filter(Boolean);
+        if (mounted) setOwnerOptions(mapped);
+      } catch (e) {
+        if (mounted) setOwnerError(e?.message || '使用者清單載入失敗');
+      }
+
+      if (mounted) {
+        setCategoryLoading(false);
+        setOwnerLoading(false);
       }
     }
-    loadCategories();
+    loadCmData();
     return () => {
       mounted = false;
     };
@@ -130,6 +193,8 @@ export default function NotesImportPage() {
       fd.append('relativePaths', JSON.stringify(paths));
       fd.append('categoryMode', categoryMode);
       if (categoryMode === 'manual') fd.append('manualCategory', manualCategory);
+      const oid = (ownerUserId || '').toString().trim();
+      if (oid) fd.append('ownerId', oid);
 
       const j = await uploadImportWithProgress(fd);
       setProgress(97);
@@ -151,6 +216,47 @@ export default function NotesImportPage() {
       <p style={{ color: '#666', marginBottom: 14 }}>
         支援多檔與資料夾上傳（遞迴）；frontmatter 優先，缺值才使用檔名/資料夾補值。
       </p>
+      <p style={{ color: '#666', marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
+        <b>API 使用者（擁有者）</b>：匯入的文章與<strong>自動建立的分類</strong>會歸屬該「使用者與權限」帳號。請從下拉選單選擇；選「使用環境變數預設」時改讀{' '}
+        <code>STRAPI_DEFAULT_ARTICLE_OWNER_ID</code>（或 <code>STRAPI_IMPORT_DEFAULT_OWNER_ID</code>），皆無則匯入會失敗。
+      </p>
+      <p style={{ color: '#666', marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
+        <b>後台清單篩選</b>：內容管理中的文章／分類僅顯示與您<strong>管理員 email 相同</strong>的 API 使用者所擁有之資料（超級管理員除外）。
+        請讓「設定 → 管理員」與「使用者與權限 → User」使用同一個 email，或設{' '}
+        <code>STRAPI_CM_OWNER_SCOPE_DISABLED=true</code> 暫時關閉篩選。
+      </p>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+          API 使用者（選填，與環境變數擇一）
+        </label>
+        <select
+          value={ownerUserId}
+          onChange={(e) => setOwnerUserId(e.target.value)}
+          disabled={loading || ownerLoading}
+          style={{
+            width: '100%',
+            maxWidth: 480,
+            padding: '10px 12px',
+            border: '1px solid #dcdce4',
+            borderRadius: 8,
+            fontSize: 14,
+            background: '#fff',
+          }}
+        >
+          <option value="">使用環境變數預設（STRAPI_DEFAULT_ARTICLE_OWNER_ID）</option>
+          {ownerOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {ownerLoading && <p style={{ margin: '6px 0 0', fontSize: 12, color: '#666' }}>載入使用者清單中…</p>}
+        {ownerError && (
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b42318' }}>
+            無法載入使用者下拉選單：{ownerError}（仍可依環境變數匯入）
+          </p>
+        )}
+      </div>
 
       <section
         style={{

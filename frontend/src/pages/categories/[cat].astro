@@ -1,8 +1,10 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { backendFetchInit } from '../../lib/backendFetch';
 
 const { cat } = Astro.params;
 const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
+const beInit = backendFetchInit(Astro.request);
 
 const url = Astro.url;
 const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
@@ -14,7 +16,10 @@ let totalPages = 1;
 let postsPerPage = 10;
 
 try {
-  const profRes = await fetch(`${apiBase}/api/site-profile`);
+  const profRes = await fetch(`${apiBase}/api/site-profile`, beInit);
+  if (profRes.status === 401) {
+    return Astro.redirect('/login?reason=session');
+  }
   if (profRes.ok) {
     const j = await profRes.json();
     const n = Number(j.data?.postsPerPage);
@@ -24,9 +29,12 @@ try {
 
 try {
   const [artRes, catRes] = await Promise.all([
-    fetch(`${apiBase}/api/articles?category=${cat}&page=${page}&limit=${postsPerPage}`),
-    fetch(`${apiBase}/api/categories`),
+    fetch(`${apiBase}/api/articles?category=${cat}&page=${page}&limit=${postsPerPage}`, beInit),
+    fetch(`${apiBase}/api/categories`, beInit),
   ]);
+  if (artRes.status === 401 || catRes.status === 401) {
+    return Astro.redirect('/login?reason=session');
+  }
   if (artRes.ok) {
     const j = await artRes.json();
     articles = j.data || [];

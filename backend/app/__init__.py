@@ -47,11 +47,13 @@ def create_app(config=None) -> OpenAPI:
     from .routes.tags       import tags_bp
     from .routes.health       import health_bp
     from .routes.site_profile import site_profile_bp
+    from .routes.auth import auth_bp
 
     app.register_api(articles_bp)
     app.register_api(categories_bp)
     app.register_api(tags_bp)
     app.register_api(health_bp)
     app.register_api(site_profile_bp)
+    app.register_api(auth_bp)
 
     return app
