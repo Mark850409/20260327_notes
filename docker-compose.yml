@@ -51,6 +51,8 @@ services:
       INLINE_IMAGE_MAX_BYTES: ${INLINE_IMAGE_MAX_BYTES:-5242880}
       # 關閉 Admin HMR 時改為 "true"（需手動重整頁面）。預設不設＝可熱更新。
       STRAPI_ADMIN_DISABLE_HMR: ${STRAPI_ADMIN_DISABLE_HMR:-}
+      # Vite 6+ Host 檢查：經 NAS DDNS 請設白名單或留空（見 .env.example）
+      STRAPI_ADMIN_ALLOWED_HOSTS: ${STRAPI_ADMIN_ALLOWED_HOSTS:-}
     volumes:
       - strapi_uploads:/opt/app/public/uploads
       - ./strapi/src:/opt/app/src              # ← persist Content Types schema
