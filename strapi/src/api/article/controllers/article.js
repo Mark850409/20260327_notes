@@ -65,10 +65,24 @@ function getFallbackDescription(content) {
   return line.slice(0, 180);
 }
 
+function isMultipartFileLike(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  return (
+    'filepath' in obj ||
+    'path' in obj ||
+    'originalFilename' in obj ||
+    'originalname' in obj ||
+    Buffer.isBuffer(obj.buffer)
+  );
+}
+
 function normalizeFiles(filesField) {
   if (!filesField) return [];
   if (Array.isArray(filesField)) return filesField;
+  // koa-body / formidable：單一欄位、單檔時常是物件而非 [obj]，不可 Object.values 拆鍵
+  if (isMultipartFileLike(filesField)) return [filesField];
   if (Array.isArray(filesField.files)) return filesField.files;
+  if (filesField.files && isMultipartFileLike(filesField.files)) return [filesField.files];
   if (typeof filesField === 'object') return Object.values(filesField).flat();
   return [];
 }
@@ -100,6 +114,157 @@ function pickMeaningfulSegment(input) {
     .filter((x) => x && !x.endsWith('.md') && x !== '未分類' && x.toLowerCase() !== 'uncategorized')[0];
 }
 
+/**
+ * 剪貼簿貼圖常見問題：browser 產生的 File 可能沒有 type / mimetype。
+ * 依副檔名與檔頭魔數推斷，供 upload plugin 使用。
+ */
+function sniffImageMimeFromBuffer(b) {
+  if (!b || b.length < 3) return '';
+  if (b.length >= 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+    return 'image/png';
+  }
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (b.length >= 6) {
+    const sig = b.slice(0, 6).toString('ascii');
+    if (sig === 'GIF89a' || sig === 'GIF87a') return 'image/gif';
+  }
+  if (
+    b.length >= 12 &&
+    b.slice(0, 4).toString('ascii') === 'RIFF' &&
+    b.slice(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  if (b.length >= 2 && b[0] === 0x42 && b[1] === 0x4d) {
+    return 'image/bmp';
+  }
+  return '';
+}
+
+async function inferImageMimeType(file) {
+  let mime = (file.type || file.mimetype || file.mimeType || '').toLowerCase();
+  if (mime.startsWith('image/')) return mime;
+
+  const filename = (file.originalFilename || file.originalname || file.name || '').toLowerCase();
+  const ext = path.extname(filename);
+  const byExt = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+  };
+  if (byExt[ext]) return byExt[ext];
+
+  if (Buffer.isBuffer(file.buffer) && file.buffer.length) {
+    const sniffed = sniffImageMimeFromBuffer(file.buffer.subarray(0, Math.min(16, file.buffer.length)));
+    if (sniffed) return sniffed;
+  }
+
+  const filePath = file.filepath || file.path;
+  if (!filePath) return '';
+
+  let fh;
+  try {
+    fh = await fs.open(filePath, 'r');
+    const buf = Buffer.alloc(16);
+    const { bytesRead } = await fh.read(buf, 0, 16, 0);
+    const sniffed = sniffImageMimeFromBuffer(buf.subarray(0, bytesRead));
+    if (sniffed) return sniffed;
+  } catch {
+    return '';
+  } finally {
+    if (fh) await fh.close();
+  }
+  return '';
+}
+
+function parseMultipartBool(value) {
+  if (value === true || value === false) return value;
+  const s = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
+}
+
+function sanitizeMediaFileLabel(name) {
+  const s = String(name || '')
+    .replace(/[/\\?%*:|"<>]/g, '-')
+    .replace(/\.\./g, '')
+    .trim()
+    .slice(0, 200);
+  return s;
+}
+
+function ensureImageExtension(fileName, mime) {
+  const extMap = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'image/bmp': '.bmp',
+  };
+  const want = extMap[(mime || '').toLowerCase()] || '.png';
+  const base = sanitizeMediaFileLabel(fileName);
+  const safeBase = base || `pasted-${Date.now()}`;
+  if (/\.[a-z0-9]{2,8}$/i.test(safeBase)) return safeBase.slice(0, 255);
+  return `${safeBase}${want}`.slice(0, 255);
+}
+
+/**
+ * Strapi upload 的 fileInfo.folder 必須是 upload_folders.id（整數），
+ * 見 @strapi/upload formatFileInfo → getFolderPath(folderId)。
+ */
+async function findRootFolderRowByName(strapi, name) {
+  const uid = 'plugin::upload.folder';
+  let list;
+  try {
+    list = await strapi.db.query(uid).findMany({
+      where: { name },
+      populate: { parent: true },
+      limit: 50,
+    });
+  } catch {
+    list = await strapi.db.query(uid).findMany({
+      where: { name },
+      limit: 50,
+    });
+  }
+  const rows = Array.isArray(list) ? list : [];
+  const rootish = rows.find((f) => f.parent == null || f.parent === undefined);
+  return rootish || rows[0] || null;
+}
+
+async function findOrCreateRootFolderId(strapi, rawName, mustCreate) {
+  const name = sanitizeMediaFileLabel(rawName).slice(0, 255);
+  if (!name) return { id: null };
+
+  try {
+    const existing = await findRootFolderRowByName(strapi, name);
+    if (existing?.id != null) return { id: existing.id };
+
+    if (!mustCreate) return { id: null };
+
+    const folderSvc = strapi.plugin('upload').service('folder');
+    const created = await folderSvc.create({ name, parent: null }, {});
+    if (created?.id != null) return { id: created.id };
+  } catch (e) {
+    strapi.log.warn(`[uploadInlineImage] findOrCreateRootFolderId: ${e.message}`);
+    try {
+      const again = await findRootFolderRowByName(strapi, name);
+      if (again?.id != null) return { id: again.id };
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { id: null };
+}
+
 module.exports = createCoreController('api::article.article', ({ strapi }) => ({
   async uploadInlineImage(ctx) {
     try {
@@ -107,17 +272,49 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       const file = files[0];
       if (!file) return ctx.badRequest('No image file uploaded.');
 
-      const mime = (file.type || file.mimetype || '').toLowerCase();
-      if (!mime.startsWith('image/')) {
+      const mime = await inferImageMimeType(file);
+      if (!mime || !mime.startsWith('image/')) {
         return ctx.badRequest('Only image files are supported.');
+      }
+      file.type = mime;
+      file.mimetype = mime;
+
+      const body = ctx.request.body || {};
+      const rawFileName = pickFirstString(body.fileName, body.filename);
+      const useFolder = parseMultipartBool(body.useFolder);
+      const rawFolderName = pickFirstString(body.folderName);
+
+      if (useFolder && !rawFolderName) {
+        return ctx.badRequest('已選擇資料夾時請提供資料夾名稱。');
+      }
+
+      let folderId = null;
+      if (useFolder && rawFolderName) {
+        const { id } = await findOrCreateRootFolderId(strapi, rawFolderName, true);
+        folderId = id;
+        if (folderId == null) {
+          strapi.log.warn('[uploadInlineImage] 無法建立或解析資料夾，檔案將先上傳至預設位置');
+        }
+      }
+
+      const displayName = ensureImageExtension(
+        rawFileName || file.originalFilename || file.name,
+        mime,
+      );
+      const altBase =
+        path.basename(displayName, path.extname(displayName)) || 'pasted-image';
+
+      const fileInfoPayload = {
+        name: displayName,
+        alternativeText: altBase,
+      };
+      if (folderId != null) {
+        fileInfoPayload.folder = folderId;
       }
 
       const uploaded = await strapi.plugin('upload').service('upload').upload({
         data: {
-          fileInfo: {
-            name: file.originalFilename || file.name || `pasted-${Date.now()}`,
-            alternativeText: file.originalFilename || file.name || 'pasted-image',
-          },
+          fileInfo: fileInfoPayload,
         },
         files: file,
       });
@@ -129,7 +326,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
 
       ctx.body = {
         url: item.url,
-        name: item.alternativeText || item.name || 'image',
+        name: altBase,
       };
     } catch (e) {
       ctx.throw(500, e.message || 'Inline image upload failed');

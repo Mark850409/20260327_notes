@@ -49,19 +49,30 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       INLINE_IMAGE_MAX_BYTES: ${INLINE_IMAGE_MAX_BYTES:-5242880}
+      # 關閉 Admin HMR 時改為 "true"（需手動重整頁面）。預設不設＝可熱更新。
+      STRAPI_ADMIN_DISABLE_HMR: ${STRAPI_ADMIN_DISABLE_HMR:-}
     volumes:
       - strapi_uploads:/opt/app/public/uploads
       - ./strapi/src:/opt/app/src              # ← persist Content Types schema
     ports:
       - "1337:1337"
+      # Admin 開發用 Vite（常為 24678）；未映射時瀏覽器連 localhost:24678 會 ERR_CONNECTION_REFUSED
+      - "24678:24678"
     networks:
       - notes_net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:1337/_health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      # node:alpine 常無 wget；Strapi 預設亦無 /_health（見 src/index.js register）
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:1337/_health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
     command: npm run develop
 
   # ── Flask API ────────────────────────────────────────────

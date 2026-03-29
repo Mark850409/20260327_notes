@@ -11,7 +11,23 @@ module.exports = {
    *
    * This gives you an opportunity to extend code.
    */
-  register(/*{ strapi }*/) {},
+  register({ strapi }) {
+    /** Docker / 編排用存活檢查（預設 Strapi 無此路徑，舊 healthcheck 會一直失敗） */
+    strapi.server.routes([
+      {
+        method: 'GET',
+        path: '/_health',
+        async handler(ctx) {
+          ctx.set('Content-Type', 'application/json');
+          ctx.body = { status: 'ok' };
+        },
+        config: {
+          auth: false,
+          policies: [],
+        },
+      },
+    ]);
+  },
 
   /**
    * An asynchronous bootstrap function that runs before

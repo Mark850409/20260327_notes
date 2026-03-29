@@ -1,44 +1,18 @@
 <template>
   <aside
+    id="site-sidebar"
     :class="[
-      'sidebar flex h-[100dvh] min-h-[100dvh] flex-col border-r border-zinc-700/80 bg-zinc-900/95 text-zinc-300 backdrop-blur-md transition-[width] duration-200 ease-out',
+      'sidebar flex shrink-0 flex-col overflow-hidden border-r border-zinc-700/80 bg-zinc-900/95 text-zinc-300 backdrop-blur-md transition-[width] duration-200 ease-out',
       'fixed inset-y-0 left-0 z-40 w-[min(100vw,18rem)] -translate-x-full shadow-xl [&.open]:translate-x-0',
-      'md:relative md:z-10 md:translate-x-0 md:shadow-none',
+      'md:relative md:z-10 md:h-auto md:min-h-[100dvh] md:translate-x-0 md:self-stretch md:shadow-none',
       collapsed && !isMobile ? 'md:w-14 md:min-w-[3.5rem]' : 'md:w-72 md:min-w-[18rem]',
     ]"
     aria-label="側欄"
   >
-    <!-- 收合時僅顯示展開鈕（桌面） -->
-    <div
-      v-if="collapsed && !isMobile"
-      class="hidden h-14 shrink-0 items-center justify-center border-b border-zinc-700/80 md:flex"
-    >
-      <button
-        type="button"
-        class="rounded-lg p-2 text-zinc-400 hover:bg-zinc-800 hover:text-accent"
-        title="展開側欄"
-        aria-expanded="false"
-        @click="setCollapsed(false)"
-      >
-        <span class="text-lg" aria-hidden="true">»</span>
-      </button>
-    </div>
-
     <div v-show="showFull" class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <!-- 頂列：收合鈕 -->
-      <div class="flex items-center justify-end border-b border-zinc-700/80 px-2 py-1.5">
-        <button
-          type="button"
-          class="hidden rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 md:inline-flex"
-          title="收合側欄"
-          aria-expanded="true"
-          @click="setCollapsed(true)"
-        >
-          <span class="text-sm" aria-hidden="true">«</span>
-        </button>
-      </div>
-
-      <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-1">
+      <div
+        class="sidebar-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-2"
+      >
         <!-- 作者區（Strapi） -->
         <div v-if="profile.avatarUrl" class="mb-2 flex justify-center">
           <img
@@ -204,7 +178,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
@@ -218,6 +192,9 @@ const props = defineProps({
 })
 
 const COLLAPSE_KEY = 'sidebar-collapsed'
+
+let mediaQuery = null
+let syncMediaQuery = null
 
 const profile = computed(() => props.profile || {})
 const query = ref('')
@@ -283,13 +260,19 @@ function isCurrentPage(slug) {
   return typeof window !== 'undefined' && window.location.pathname === `/notes/${slug}`
 }
 
+function onToggleDesktopCollapse() {
+  if (!isMobile.value) setCollapsed(!collapsed.value)
+}
+
 onMounted(() => {
-  const mq = window.matchMedia('(max-width: 767px)')
-  const syncMq = () => {
-    isMobile.value = mq.matches
+  mediaQuery = window.matchMedia('(max-width: 767px)')
+  syncMediaQuery = () => {
+    isMobile.value = mediaQuery.matches
   }
-  syncMq()
-  mq.addEventListener('change', syncMq)
+  syncMediaQuery()
+  mediaQuery.addEventListener('change', syncMediaQuery)
+
+  window.addEventListener('notes-sidebar:toggle-desktop', onToggleDesktopCollapse)
 
   try {
     collapsed.value = localStorage.getItem(COLLAPSE_KEY) === '1'
@@ -301,6 +284,13 @@ onMounted(() => {
     const slug = props.categories[0].slug
     openCats.value.push(slug)
     loadCatArticles(slug)
+  }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('notes-sidebar:toggle-desktop', onToggleDesktopCollapse)
+  if (mediaQuery && syncMediaQuery) {
+    mediaQuery.removeEventListener('change', syncMediaQuery)
   }
 })
 </script>

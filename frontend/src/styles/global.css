@@ -19,61 +19,46 @@
   }
 }
 
-/* Pygments / codehilite — Markdown 程式碼區塊 */
+/* 文章程式碼：highlight.js + 自訂外框（避免與 prose / hljs 主題雙重邊框） */
 @layer components {
-  .article-body .highlight {
-    @apply rounded-lg;
-    background: rgb(39 39 42 / 0.45) !important;
+  .article-body .code-block-wrap pre.code-block-pre code.hljs {
+    @apply block w-full overflow-x-auto border-0 p-[1em];
+    font-size: inherit;
+    line-height: inherit;
   }
-  [data-theme='dark'] .article-body .highlight {
-    background: rgb(24 24 27) !important;
+  /* 行號欄：必須保留換行（Tailwind preflight 會把 \n 收成空白） */
+  .article-body .code-block-wrap .code-line-gutter {
+    white-space: pre;
   }
-  .highlight .hll {
-    background: rgba(73, 177, 245, 0.14);
+}
+
+/* 側欄內容捲動區：卷軸在 hover 側欄時才明顯（WebKit + Firefox） */
+.sidebar .sidebar-scroll {
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.sidebar .sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar .sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar .sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 6px;
+}
+.sidebar:hover .sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: rgb(161 161 170 / 0.45);
+}
+.sidebar .sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgb(161 161 170 / 0.55);
+}
+@supports (scrollbar-width: thin) {
+  .sidebar .sidebar-scroll {
+    scrollbar-width: none;
   }
-  .highlight .c {
-    @apply text-zinc-500 italic;
-  }
-  .highlight .k {
-    @apply text-sky-600;
-  }
-  [data-theme='dark'] .highlight .k {
-    @apply text-sky-300;
-  }
-  .highlight .n {
-    @apply text-inherit;
-  }
-  .highlight .o {
-    @apply text-accent;
-  }
-  .highlight .s {
-    @apply text-sky-800;
-  }
-  [data-theme='dark'] .highlight .s {
-    @apply text-sky-200;
-  }
-  .highlight .m {
-    @apply text-violet-600;
-  }
-  .highlight .nb {
-    @apply text-amber-800;
-  }
-  [data-theme='dark'] .highlight .nb {
-    @apply text-amber-400;
-  }
-  .highlight .nf {
-    @apply text-violet-600;
-  }
-  .highlight .nc {
-    @apply text-emerald-700;
-  }
-  [data-theme='dark'] .highlight .nc {
-    @apply text-emerald-400;
-  }
-  .highlight .nn {
-    @apply text-amber-800;
-  }
-  .highlight .bp {
-    @apply text-zinc-500;
+  .sidebar:hover .sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(161 161 170 / 0.45) transparent;
   }
 }

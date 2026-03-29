@@ -70,7 +70,7 @@ try {
   <body
     class="min-h-screen bg-zinc-100 text-zinc-900 transition-colors dark:bg-zinc-950 dark:text-zinc-100"
   >
-    <div class="flex min-h-screen">
+    <div class="flex min-h-screen items-stretch">
       {showSidebar && (
         <Sidebar
           client:load
@@ -83,16 +83,34 @@ try {
       )}
       <main class="main min-w-0 flex-1 bg-zinc-100 dark:bg-zinc-950" id="main-content">
         <header
-          class="sticky top-0 z-[5] flex h-14 items-center justify-between border-b border-zinc-200 bg-white px-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+          class="sticky top-0 z-[5] flex h-14 items-center justify-between gap-2 border-b border-zinc-200 bg-white px-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
         >
-          <button
-            class="menu-toggle flex rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-accent md:hidden"
-            id="menu-toggle"
-            type="button"
-            aria-label="開啟側欄"
-          >
-            <span class="text-xl leading-none" aria-hidden="true">☰</span>
-          </button>
+          {showSidebar ? (
+            <button
+              class="menu-toggle flex shrink-0 rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-accent dark:hover:bg-zinc-800 dark:hover:text-accent"
+              id="menu-toggle"
+              type="button"
+              aria-label="切換側欄"
+              aria-controls="site-sidebar"
+            >
+              <svg
+                class="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              </svg>
+            </button>
+          ) : (
+            <span class="w-9 shrink-0" aria-hidden="true" />
+          )}
           <div class="ml-auto flex items-center gap-2">
             <ThemeToggle client:load />
           </div>
@@ -105,14 +123,21 @@ try {
     <script>
       const toggle = document.getElementById('menu-toggle');
       const sidebar = document.querySelector('.sidebar');
+      const isMobileLayout = () => window.matchMedia('(max-width: 767px)').matches;
+
       toggle?.addEventListener('click', (e) => {
         e.stopPropagation();
-        sidebar?.classList.toggle('open');
+        if (isMobileLayout()) {
+          sidebar?.classList.toggle('open');
+        } else {
+          window.dispatchEvent(new CustomEvent('notes-sidebar:toggle-desktop'));
+        }
       });
+
       document.addEventListener('click', (e) => {
         const target = e.target;
         if (
-          window.matchMedia('(max-width: 767px)').matches &&
+          isMobileLayout() &&
           sidebar?.classList.contains('open') &&
           target !== toggle &&
           !(target instanceof Node && sidebar?.contains(target))

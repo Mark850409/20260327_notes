@@ -1,5 +1,10 @@
 import React from 'react';
 import { Upload } from '@strapi/icons';
+import Swal from 'sweetalert2';
+import 'sweetalert2/dist/sweetalert2.min.css';
+import { openPasteImageUploadDialog } from './utils/pasteImageModal';
+import { buildTimestampPastedFileName } from './utils/pasteImageFileName';
+import { initNotesSidebarHamburger } from './utils/notesSidebarHamburger';
 
 /**
  * 後台介面語言：Strapi 內建檔為 zh.json（繁體）、zh-Hans.json（簡體），沒有 zh-Hant。
@@ -24,6 +29,21 @@ export default {
   config: {
     // en 為預設／fallback，無法移除；zh 即繁體中文介面
     locales: ['zh'],
+    // 補齊 zh 訊息，避免 @formatjs/intl MISSING_TRANSLATION 洗版（F12）
+    translations: {
+      zh: {
+        'notes-import.label': '批次匯入筆記',
+        'content-manager.plugin.name': '內容管理',
+        // Content-Type 顯示名在 zh 缺漏時 formatjs 會以 displayName 當 key（含尾端空白）
+        'Article ': '文章',
+        Article: '文章',
+        category: '分類',
+        Category: '分類',
+        User: '使用者',
+        'Site Profile': '網站設定',
+        'content-manager.containers.list.table-headers.status': '狀態',
+      },
+    },
   },
   bootstrap() {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -93,9 +113,19 @@ export default {
       return false;
     };
 
-    const uploadClipboardImage = async (file) => {
+    const uploadClipboardImage = async (file, clipboardItemType, dialogResult) => {
+      const type = (file.type || clipboardItemType || '').trim();
+      const safeType = type.startsWith('image/') ? type : 'image/png';
+      const blob = file;
+      const named =
+        file.type === safeType && file instanceof File
+          ? file
+          : new File([blob], file.name || `pasted-${Date.now()}.png`, { type: safeType });
       const fd = new FormData();
-      fd.append('files', file, file.name || `pasted-${Date.now()}.png`);
+      fd.append('files', named, named.name || `pasted-${Date.now()}.png`);
+      fd.append('fileName', dialogResult.fileName || named.name || `pasted-${Date.now()}.png`);
+      fd.append('useFolder', dialogResult.useFolder ? 'true' : 'false');
+      fd.append('folderName', dialogResult.folderName || '');
       const res = await fetch('/api/upload/inline-image', {
         method: 'POST',
         body: fd,
@@ -116,7 +146,9 @@ export default {
       if (!isArticleContentRoute()) return;
       const dt = event.clipboardData;
       if (!dt?.items?.length) return;
-      const imageItems = Array.from(dt.items).filter((i) => i.kind === 'file' && i.type.startsWith('image/'));
+      const imageItems = Array.from(dt.items).filter(
+        (i) => i.kind === 'file' && (!i.type || i.type.startsWith('image/')),
+      );
       if (!imageItems.length) return;
 
       const target = findEditableTarget(event.target);
@@ -126,23 +158,53 @@ export default {
       event.stopPropagation();
 
       try {
-        const lines = [];
+        const pending = [];
         for (const item of imageItems) {
           const file = item.getAsFile();
-          if (!file) continue;
+          if (file) pending.push({ item, file });
+        }
+        if (!pending.length) return;
+
+        const batchTs = Date.now();
+        const lines = [];
+        for (let i = 0; i < pending.length; i += 1) {
+          const { item, file } = pending[i];
+          const defaultFileName = buildTimestampPastedFileName(
+            file,
+            item.type,
+            i,
+            pending.length,
+            batchTs,
+          );
           // eslint-disable-next-line no-await-in-loop
-          const uploaded = await uploadClipboardImage(file);
+          const dialog = await openPasteImageUploadDialog({
+            defaultFileName,
+            index: i + 1,
+            total: pending.length,
+          });
+          if (!dialog) continue;
+          // eslint-disable-next-line no-await-in-loop
+          const uploaded = await uploadClipboardImage(file, item.type, dialog);
           lines.push(`![${uploaded.name}](${uploaded.url})`);
         }
         if (!lines.length) return;
         insertTextToTarget(target, `\n${lines.join('\n')}\n`);
       } catch (error) {
-        // 保持可用性：失敗時不阻斷使用者，僅提示
-        // eslint-disable-next-line no-alert
-        window.alert(`貼上圖片上傳失敗：${error.message || 'unknown error'}`);
+        void Swal.fire({
+          icon: 'error',
+          title: '貼上圖片上傳失敗',
+          text: error?.message || 'unknown error',
+          confirmButtonText: '確定',
+        });
       }
     };
 
     document.addEventListener('paste', onPaste, true);
+
+    /**
+     * Strapi 5 官方已移除可收合主側欄（僅保留窄圖示列＋ tooltip），無對應 Admin API。
+     * 改為自訂左上角漢堡鈕：見 ./utils/notesSidebarHamburger.js
+     */
+    initNotesSidebarHamburger();
   },
 };
