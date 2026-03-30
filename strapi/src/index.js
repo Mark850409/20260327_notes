@@ -80,8 +80,8 @@ module.exports = {
     ]);
 
     /**
-     * 後台 Content Manager 走 Document Service：依「管理員 email = API 使用者 email」篩選 owner；
-     * /api/* 且已 JWT 登入時併入同一套 owner 篩選（與自訂 controller 並存為 $and，不重複則等價）。
+     * 後台 Content Manager 走 Document Service：依「管理員 email = API 使用者 email」篩選 owner。
+     * 前台 REST（/api/*）不在此處依 owner 篩選（見 resolveOwnerDocumentScope）。
      * 設 STRAPI_CM_OWNER_SCOPE_DISABLED=true 可關閉（除錯／遷移用）。
      */
     strapi.documents.use(async (context, next) => {

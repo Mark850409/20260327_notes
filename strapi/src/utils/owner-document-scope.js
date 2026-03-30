@@ -70,12 +70,7 @@ async function resolveOwnerDocumentScope(strapi) {
     }
   }
 
-  if (path.startsWith('/api/') && ctx.state?.user?.id != null) {
-    const strategy = (ctx.state.auth?.strategy?.name || '').toLowerCase();
-    if (strategy.includes('admin')) return { mode: 'none' };
-    return { mode: 'owner', userId: ctx.state.user.id };
-  }
-
+  /** 前台 REST（/api/*）不再依 owner 篩選，讓已登入成員可互相讀取筆記／分類。 */
   return { mode: 'none' };
 }
 

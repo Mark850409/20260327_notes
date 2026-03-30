@@ -124,17 +124,20 @@ export default function NotesImportPage() {
     };
   }, []);
 
-  function normalizeFileList(fileList) {
-    return Array.from(fileList || [])
+  /**
+   * @param {FileList|null|undefined} fileList
+   * @param {{ fromDirectory?: boolean }} [opts] 資料夾模式：每次選取加時間前綴，避免多個資料夾內相同相對路徑互蓋；可重複按鈕累加多個資料夾。
+   */
+  function addFiles(fileList, opts = {}) {
+    const { fromDirectory = false } = opts;
+    const batchPrefix = fromDirectory ? `pick-${Date.now()}` : null;
+    const incoming = Array.from(fileList || [])
       .filter((f) => f?.name?.toLowerCase()?.endsWith('.md'))
-      .map((f) => ({
-        file: f,
-        path: f.webkitRelativePath || f.name,
-      }));
-  }
-
-  function addFiles(fileList) {
-    const incoming = normalizeFileList(fileList);
+      .map((f) => {
+        const rel = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+        const path = batchPrefix ? `${batchPrefix}/${rel}` : rel;
+        return { file: f, path };
+      });
     setItems((prev) => {
       const map = new Map(prev.map((p) => [p.path, p]));
       for (const x of incoming) map.set(x.path, x);
@@ -214,7 +217,7 @@ export default function NotesImportPage() {
     <main style={{ padding: 24, maxWidth: 1100 }}>
       <h1 style={{ fontSize: 28, marginBottom: 6 }}>批次匯入筆記（Markdown）</h1>
       <p style={{ color: '#666', marginBottom: 14 }}>
-        支援多檔與資料夾上傳（遞迴）；frontmatter 優先，缺值才使用檔名/資料夾補值。
+        支援多檔與<strong>多個資料夾</strong>：可重複按「選擇資料夾」累加；若瀏覽器支援，同一對話框內可複選多個資料夾（Chrome／Edge 較常見）。資料夾會遞迴包含 .md；frontmatter 優先，缺值才使用檔名/路徑補值。
       </p>
       <p style={{ color: '#666', marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         <b>API 使用者（擁有者）</b>：匯入的文章與<strong>自動建立的分類</strong>會歸屬該「使用者與權限」帳號。請從下拉選單選擇；選「使用環境變數預設」時改讀{' '}
@@ -278,9 +281,10 @@ export default function NotesImportPage() {
         <button
           type="button"
           onClick={() => dirInputRef.current?.click()}
+          title="可多次點選以加入多個資料夾；若系統檔案對話框支援，可一次複選多個資料夾"
           style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, cursor: 'pointer', background: '#fff' }}
         >
-          選擇資料夾
+          選擇資料夾（可累加／複選）
         </button>
         <button
           type="button"
@@ -389,7 +393,10 @@ export default function NotesImportPage() {
         accept=".md,text/markdown"
         multiple
         style={{ display: 'none' }}
-        onChange={(e) => addFiles(e.target.files)}
+        onChange={(e) => {
+          addFiles(e.target.files, { fromDirectory: false });
+          e.target.value = '';
+        }}
       />
       <input
         ref={dirInputRef}
@@ -397,7 +404,10 @@ export default function NotesImportPage() {
         accept=".md,text/markdown"
         multiple
         style={{ display: 'none' }}
-        onChange={(e) => addFiles(e.target.files)}
+        onChange={(e) => {
+          addFiles(e.target.files, { fromDirectory: true });
+          e.target.value = '';
+        }}
         {...{ webkitdirectory: 'true', directory: 'true' }}
       />
 

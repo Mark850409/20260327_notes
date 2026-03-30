@@ -1,7 +1,7 @@
 'use strict';
 
 const { createCoreController } = require('@strapi/strapi').factories;
-const { mergeOwnerIntoFilters, getStartLimitFromSanitized } = require('../../../utils/owner-scoped-rest');
+const { getStartLimitFromSanitized } = require('../../../utils/owner-scoped-rest');
 const { buildOwnerRelationValue } = require('../../../utils/owner-document-scope');
 
 module.exports = createCoreController('api::category.category', ({ strapi }) => ({
@@ -9,10 +9,9 @@ module.exports = createCoreController('api::category.category', ({ strapi }) => 
     if (!ctx.state.user) {
       return ctx.unauthorized('請先登入（使用者與權限 JWT）');
     }
-    const userId = ctx.state.user.id;
     await this.validateQuery(ctx);
     const sanitizedQuery = await this.sanitizeQuery(ctx);
-    const mergedFilters = mergeOwnerIntoFilters(sanitizedQuery.filters, userId);
+    const mergedFilters = sanitizedQuery.filters;
     const { start, limit } = getStartLimitFromSanitized(sanitizedQuery, ctx.query);
 
     const results = await strapi.entityService.findMany('api::category.category', {
@@ -45,13 +44,11 @@ module.exports = createCoreController('api::category.category', ({ strapi }) => 
     if (!ctx.state.user) {
       return ctx.unauthorized('請先登入（使用者與權限 JWT）');
     }
-    const userId = ctx.state.user.id;
     const { id } = ctx.params;
     await this.validateQuery(ctx);
     const sanitizedQuery = await this.sanitizeQuery(ctx);
 
     const entity = await strapi.entityService.findOne('api::category.category', id, {
-      filters: { owner: { id: userId } },
       populate: sanitizedQuery.populate,
     });
     if (!entity) {
