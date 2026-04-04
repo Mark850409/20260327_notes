@@ -1,0 +1,70 @@
+---
+/**
+ * 全幅列表頂部封面（技術筆記／部落格），對應後台 Site Profile → notesHero / blogHero。
+ */
+interface Props {
+  coverUrl?: string;
+  title?: string;
+  subtitle?: string;
+  /** 捲動錨點，預設 #content-start */
+  contentAnchor?: string;
+  /** 是否有 overlay header（會加大頂部留白） */
+  overlayHeader?: boolean;
+}
+
+const {
+  coverUrl = '',
+  title = '',
+  subtitle = '',
+  contentAnchor = '#content-start',
+  overlayHeader = false,
+} = Astro.props;
+
+const show = Boolean((coverUrl && coverUrl.length) || title || subtitle);
+---
+
+{
+  show && (
+    <section
+      class:list={[
+        'relative mb-8 flex flex-col items-center justify-center overflow-hidden border-b border-zinc-200/80 dark:border-zinc-800/80',
+        overlayHeader ? 'min-h-[100vh]' : 'min-h-[min(78vh,640px)]',
+      ]}
+      aria-label="區塊封面"
+    >
+      {coverUrl ? (
+        <div
+          class="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={`background-image: url(${JSON.stringify(coverUrl)})`}
+        />
+      ) : (
+        <div class="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-950" />
+      )}
+      <div class="absolute inset-0 bg-gradient-to-b from-black/45 via-black/38 to-black/55" aria-hidden="true" />
+
+      <div
+        class:list={[
+          'relative z-10 max-w-3xl px-6 py-16 text-center text-white',
+          overlayHeader ? 'pt-32 md:pt-40' : '',
+        ]}
+      >
+        {title ? (
+          <h1 class="text-4xl font-bold tracking-tight drop-shadow-sm md:text-5xl lg:text-6xl">{title}</h1>
+        ) : null}
+        {subtitle ? (
+          <p class="mt-5 text-lg leading-relaxed text-white/90 drop-shadow md:text-xl">{subtitle}</p>
+        ) : null}
+      </div>
+
+      <a
+        href={contentAnchor}
+        class="absolute bottom-5 z-10 flex h-10 w-10 items-center justify-center rounded-full text-white/90 ring-1 ring-white/30 backdrop-blur-sm transition hover:bg-white/10"
+        aria-label="捲動至內容"
+      >
+        <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+        </svg>
+      </a>
+    </section>
+  )
+}

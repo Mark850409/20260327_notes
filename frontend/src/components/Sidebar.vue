@@ -1,65 +1,45 @@
 <template>
   <aside
     id="site-sidebar"
-    :class="[
-      'sidebar flex shrink-0 flex-col overflow-hidden border-r border-zinc-700/80 bg-zinc-900/95 text-zinc-300 backdrop-blur-md transition-[width] duration-200 ease-out',
-      'fixed inset-y-0 left-0 z-40 w-[min(100vw,18rem)] -translate-x-full shadow-xl [&.open]:translate-x-0',
-      'md:relative md:z-10 md:h-auto md:min-h-[100dvh] md:translate-x-0 md:self-stretch md:shadow-none',
-      collapsed && !isMobile ? 'md:w-14 md:min-w-[3.5rem]' : 'md:w-72 md:min-w-[18rem]',
-    ]"
+    class="sidebar order-2 w-full shrink-0 px-4 pb-10 md:order-1 md:w-[18.5rem] md:min-w-[18.5rem] md:px-0 md:pt-8"
     aria-label="側欄"
   >
-    <div v-show="showFull" class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div
-        class="sidebar-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-2"
-      >
-        <!-- 作者區（Strapi） -->
+    <div class="flex flex-col gap-4">
+      <section :class="[cardClass, 'p-5']">
         <div v-if="profile.avatarUrl" class="mb-2 flex justify-center">
           <img
             :src="profile.avatarUrl"
             alt="Author Avatar"
-            class="h-20 w-20 rounded-full border border-zinc-600 object-cover shadow-md"
+            class="h-20 w-20 rounded-full border border-zinc-200 object-cover shadow-sm dark:border-zinc-700"
             loading="lazy"
           />
         </div>
-        <p class="text-center text-xs text-zinc-500">
-          {{ profile.displayName || profile.authorLabel || 'Author' }}
-        </p>
-        <h2 class="mt-1 text-center text-3xl font-bold tracking-tight text-zinc-100">
+        <p class="text-center text-xs text-zinc-500 dark:text-zinc-400">{{ profile.displayName || profile.authorLabel || 'Author' }}</p>
+        <h2 class="mt-1 text-center text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
           {{ profile.siteTitle || siteTitle }}
         </h2>
-        <p v-if="profile.motto" class="mt-2 text-center text-sm text-zinc-400">
-          {{ profile.motto }}
-        </p>
+        <p v-if="profile.motto" class="mt-2 text-center text-sm text-zinc-600 dark:text-zinc-400">{{ profile.motto }}</p>
         <blockquote
           v-if="profile.quote"
-          class="mt-4 border-l-2 border-accent/60 pl-3 text-center text-sm leading-relaxed text-zinc-400"
+          class="mt-4 border-l-2 border-accent/60 pl-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400"
         >
-          <p class="text-left">{{ profile.quote }}</p>
-          <cite v-if="profile.quoteSource" class="mt-2 block not-italic text-zinc-500">{{
-            profile.quoteSource
-          }}</cite>
+          <p>{{ profile.quote }}</p>
+          <cite v-if="profile.quoteSource" class="mt-2 block not-italic text-zinc-500 dark:text-zinc-400">{{ profile.quoteSource }}</cite>
         </blockquote>
-
-        <!-- 統計 -->
-        <div
-          class="mt-5 grid grid-cols-3 gap-1 border-y border-zinc-700/80 py-3 text-center text-xs"
-        >
+        <div class="mt-5 grid grid-cols-3 gap-1 border-y border-zinc-200 py-3 text-center text-xs dark:border-zinc-700">
           <div>
-            <div class="text-lg font-semibold text-zinc-100">{{ stats.posts }}</div>
-            <div class="text-zinc-500">文章</div>
+            <div class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{{ stats.posts }}</div>
+            <div class="text-zinc-500 dark:text-zinc-400">文章</div>
           </div>
-          <div class="border-x border-zinc-700/80">
-            <div class="text-lg font-semibold text-zinc-100">{{ stats.categories }}</div>
-            <div class="text-zinc-500">分類</div>
+          <div class="border-x border-zinc-200 dark:border-zinc-700">
+            <div class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{{ stats.categories }}</div>
+            <div class="text-zinc-500 dark:text-zinc-400">分類</div>
           </div>
           <div>
-            <div class="text-lg font-semibold text-zinc-100">{{ stats.tags }}</div>
-            <div class="text-zinc-500">標籤</div>
+            <div class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{{ stats.tags }}</div>
+            <div class="text-zinc-500 dark:text-zinc-400">標籤</div>
           </div>
         </div>
-
-        <!-- 社群 -->
         <div v-if="profile.socialLinks?.length" class="mt-4 flex flex-wrap justify-center gap-2">
           <a
             v-for="(s, i) in profile.socialLinks"
@@ -67,118 +47,161 @@
             :href="s.url"
             target="_blank"
             rel="noopener noreferrer"
-            class="inline-flex items-center gap-1 rounded-md border border-zinc-600 px-2 py-1 text-xs text-zinc-300 hover:border-accent hover:text-accent"
+            class="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:border-accent hover:text-accent dark:border-zinc-600 dark:text-zinc-300"
           >
             <span>{{ socialGlyph(s.iconKey) }}</span>
             {{ s.label }}
           </a>
         </div>
-
-        <!-- 授權 -->
         <div v-if="profile.licenseImageUrl" class="mt-4 flex justify-center">
-          <img
-            :src="profile.licenseImageUrl"
-            alt="License"
-            class="max-h-10 opacity-90"
-            loading="lazy"
-          />
+          <img :src="profile.licenseImageUrl" alt="License" class="max-h-10 opacity-90" loading="lazy" />
         </div>
         <div
           v-else-if="profile.licenseHtml"
           class="license-html mt-4 text-center text-xs text-zinc-500 [&_a]:text-accent [&_a]:underline"
           v-html="profile.licenseHtml"
         />
+      </section>
 
-        <!-- 近期文章 -->
-        <div class="mt-6 border-t border-zinc-700/80 pt-4">
-          <h3 class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
-            <span aria-hidden="true">⟲</span>
-            近期文章
-          </h3>
+      <section :class="[cardClass, 'p-5']">
+        <h3 class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+          <span aria-hidden="true">⟲</span>
+          近期技術筆記
+        </h3>
+        <ul class="space-y-1.5 text-sm">
+          <li v-for="a in recentArticles" :key="a.id">
+            <a :href="`/notes/${a.slug}`" class="line-clamp-2 text-zinc-600 hover:text-accent dark:text-zinc-300">{{ a.title }}</a>
+          </li>
+        </ul>
+        <p v-if="!recentArticles.length" class="text-xs text-zinc-500">尚無文章</p>
+      </section>
+
+      <section id="sidebar-search" :class="[cardClass, 'scroll-mt-24 p-5']">
+        <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">搜尋</div>
+        <input
+          v-model="query"
+          type="text"
+          placeholder="搜尋..."
+          class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 placeholder-zinc-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-200 dark:placeholder-zinc-500"
+          @keyup.enter="goSearch"
+        />
+      </section>
+
+      <template v-for="key in orderedWidgetKeys" :key="key">
+        <section v-if="key === 'archive' && isEnabled('archive')" :class="[cardClass, 'p-5']">
+          <h3 :class="widgetTitleClass">{{ widgetTitle('archive', '歸檔') }}</h3>
           <ul class="space-y-1.5 text-sm">
-            <li v-for="a in recentArticles" :key="a.id">
+            <li v-for="a in archiveItems" :key="a.period" class="flex items-center justify-between gap-3">
+              <span class="text-zinc-700 dark:text-zinc-200">{{ a.label }}</span>
+              <span class="tabular-nums text-zinc-500 dark:text-zinc-400">{{ a.count }}</span>
+            </li>
+          </ul>
+          <p v-if="!archiveItems.length" class="text-xs text-zinc-500">尚無資料</p>
+        </section>
+
+        <section v-if="key === 'siteStats' && isEnabled('siteStats')" :class="[cardClass, 'p-5']">
+          <h3 :class="widgetTitleClass">{{ widgetTitle('siteStats', '網站資訊') }}</h3>
+          <ul class="space-y-2 text-sm text-zinc-700 dark:text-zinc-200">
+            <li class="flex justify-between gap-3">
+              <span>文章數目</span><span class="tabular-nums text-zinc-600 dark:text-zinc-300">{{ siteStats.posts ?? '-' }}</span>
+            </li>
+            <li class="flex justify-between gap-3">
+              <span>已運行時間</span><span class="tabular-nums text-zinc-600 dark:text-zinc-300">{{ siteStats.runningDays ?? '-' }} 天</span>
+            </li>
+            <li class="flex justify-between gap-3">
+              <span>訪客數</span><span class="tabular-nums text-zinc-600 dark:text-zinc-300">{{ siteStats.visitors ?? '-' }}</span>
+            </li>
+            <li class="flex justify-between gap-3">
+              <span>總訪問量</span><span class="tabular-nums text-zinc-600 dark:text-zinc-300">{{ siteStats.pageviews ?? '-' }}</span>
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="key === 'tagCloud' && isEnabled('tagCloud')" :class="[cardClass, 'p-5']">
+          <h3 :class="widgetTitleClass">{{ widgetTitle('tagCloud', '標籤') }}</h3>
+          <div class="flex flex-wrap gap-2">
+            <a
+              v-for="t in tagCloudItems"
+              :key="t.slug || t.name"
+              :href="tagHref(t)"
+              class="rounded-full bg-rose-400/90 px-3 py-1 text-xs text-white hover:bg-rose-500"
+            >
+              {{ t.name }}
+            </a>
+          </div>
+          <p v-if="!tagCloudItems.length" class="text-xs text-zinc-500">尚無標籤</p>
+        </section>
+
+        <section
+          v-if="key === 'categoryTree' && isEnabled('categoryTree')"
+          id="sidebar-categories"
+          :class="[cardClass, 'scroll-mt-24 p-5']"
+        >
+          <h3 :class="widgetTitleClass">{{ widgetTitle('categoryTree', '分類') }}</h3>
+          <ul class="space-y-1 text-sm">
+            <li v-for="row in categoryRows" :key="`${row.id}-${row.depth}`" class="flex items-center justify-between gap-2">
               <a
-                :href="`/notes/${a.slug}`"
-                class="line-clamp-2 text-zinc-400 hover:text-accent"
-                >{{ a.title }}</a
+                :href="`/categories/${row.slug}`"
+                class="truncate text-zinc-700 hover:text-accent dark:text-zinc-200"
+                :style="{ paddingLeft: `${row.depth * 14}px` }"
               >
+                {{ row.depth > 0 ? '└ ' : '' }}{{ row.name }}
+              </a>
+              <span class="tabular-nums text-zinc-500 dark:text-zinc-400">{{ row.count }}</span>
             </li>
           </ul>
-          <p v-if="!recentArticles.length" class="text-xs text-zinc-600">尚無文章</p>
-        </div>
+          <p v-if="!categoryRows.length" class="text-xs text-zinc-500">尚無分類</p>
+        </section>
 
-        <!-- 搜尋 -->
-        <div class="mt-5">
-          <input
-            v-model="query"
-            type="text"
-            placeholder="搜尋..."
-            class="w-full rounded-lg border border-zinc-600 bg-zinc-800/80 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            @keyup.enter="goSearch"
-          />
-        </div>
+        <section v-if="key === 'postCalendar' && isEnabled('postCalendar')" :class="[cardClass, 'p-5']">
+          <h3 :class="widgetTitleClass">{{ widgetTitle('postCalendar', '文章日曆') }}</h3>
+          <div class="mb-2 text-sm text-zinc-600 dark:text-zinc-300">
+            {{ calendarData.year }} 年 {{ calendarData.month }} 月
+          </div>
+          <div class="grid grid-cols-7 gap-1 text-center text-xs">
+            <span v-for="w in weekdayHeaders" :key="w" class="py-1 text-zinc-500">{{ w }}</span>
+            <span
+              v-for="cell in calendarCells"
+              :key="cell.key"
+              class="rounded py-1"
+              :class="[
+                cell.current ? 'text-zinc-700 dark:text-zinc-200' : 'text-zinc-400',
+                cell.count > 0 ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-300' : '',
+              ]"
+            >
+              {{ cell.day }}
+            </span>
+          </div>
+        </section>
 
-        <!-- 分類 -->
-        <div class="mt-5">
-          <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">分類</div>
-          <div v-if="loading" class="text-xs text-zinc-600">載入中...</div>
-          <div v-else-if="!categories.length" class="text-xs text-zinc-600">尚無分類</div>
-          <ul v-else class="space-y-0.5">
-            <li v-for="cat in categories" :key="cat.id">
-              <button
-                type="button"
-                class="flex w-full items-center gap-1 rounded px-2 py-1.5 text-left text-sm text-zinc-400 hover:bg-zinc-800"
-                :class="openCats.includes(cat.slug) ? 'bg-zinc-800 text-accent' : ''"
-                @click="toggleCat(cat.slug)"
-              >
-                <span class="w-3 shrink-0 text-xs">{{ openCats.includes(cat.slug) ? '▾' : '›' }}</span>
-                <span class="min-w-0 flex-1 truncate">{{ cat.name }}</span>
-              </button>
-              <Transition name="slide">
-                <ul
-                  v-if="openCats.includes(cat.slug)"
-                  class="ml-3 border-l border-zinc-700 py-1 pl-2"
-                >
-                  <li v-if="!catArticles[cat.slug]" class="px-2 py-0.5 text-xs text-zinc-600">
-                    載入中...
-                  </li>
-                  <li v-else-if="!catArticles[cat.slug].length" class="px-2 py-0.5 text-xs text-zinc-600">
-                    暫無文章
-                  </li>
-                  <li v-for="art in catArticles[cat.slug]" :key="art.id">
-                    <a
-                      :href="`/notes/${art.slug}`"
-                      class="block truncate rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-                      :class="
-                        isCurrentPage(art.slug)
-                          ? 'border-l-2 border-accent bg-zinc-800/80 pl-1.5 font-medium text-accent'
-                          : ''
-                      "
-                      >{{ art.title }}</a
-                    >
-                  </li>
-                </ul>
-              </Transition>
-            </li>
-          </ul>
-        </div>
+        <section v-if="key === 'clockWeather' && isEnabled('clockWeather')" :class="[cardClass, 'p-5']">
+          <h3 :class="widgetTitleClass">{{ widgetTitle('clockWeather', '時鐘與天氣') }}</h3>
+          <div class="text-xs text-zinc-500">{{ localDateText }}</div>
+          <div class="mt-1 text-3xl font-semibold tracking-wide text-zinc-900 dark:text-zinc-100">{{ localTimeText }}</div>
+          <div class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+            <span v-if="weather.city">{{ weather.city }} · </span>
+            <span v-if="weather.temperature != null">{{ weather.temperature }}{{ weather.temperatureUnit }}</span>
+            <span v-if="weather.windSpeed != null"> · 風速 {{ weather.windSpeed }}</span>
+            <span v-if="weather.temperature == null && weather.windSpeed == null">尚無天氣資料</span>
+          </div>
+        </section>
+      </template>
 
-        <div class="mt-6 border-t border-zinc-700/80 pt-3">
-          <a
-            href="/admin"
-            target="_blank"
-            rel="noopener"
-            class="text-xs text-zinc-500 hover:text-accent"
-            >CMS 後台</a
-          >
-        </div>
-      </div>
+      <section :class="[cardClass, 'p-5']">
+        <a href="/admin" target="_blank" rel="noopener" class="text-xs text-zinc-500 hover:text-accent dark:text-zinc-400">CMS 後台</a>
+      </section>
     </div>
   </aside>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+
+/** 與 tailwind.config `darkMode: ['selector', '[data-theme="dark"]']` 對齊，避免自訂 CSS 覆蓋順序導致暗色下仍為白底 */
+const cardClass =
+  'rounded-[0.9rem] border border-zinc-200 bg-white/[0.92] shadow-sm dark:border-zinc-600 dark:bg-zinc-900/90'
+const widgetTitleClass =
+  'mb-2 flex items-center gap-[0.35rem] text-[1.45rem] font-bold leading-tight text-zinc-900 dark:text-zinc-100'
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
@@ -191,25 +214,89 @@ const props = defineProps({
   },
 })
 
-const COLLAPSE_KEY = 'sidebar-collapsed'
-
-let mediaQuery = null
-let syncMediaQuery = null
-
 const profile = computed(() => props.profile || {})
 const query = ref('')
-const openCats = ref([])
-const catArticles = ref({})
-const loading = ref(false)
-const collapsed = ref(false)
-const isMobile = ref(true)
-
 const apiBase = computed(() => '/api')
-
-const showFull = computed(() => {
-  if (isMobile.value) return true
-  return !collapsed.value
+const widgetConfig = computed(() => profile.value.widgetConfig || {})
+const defaultOrder = ['archive', 'siteStats', 'tagCloud', 'categoryTree', 'postCalendar', 'clockWeather']
+const orderedWidgetKeys = computed(() => {
+  const fromConfig = Array.isArray(widgetConfig.value.order) ? widgetConfig.value.order : []
+  const clean = fromConfig.filter((x) => defaultOrder.includes(x))
+  return clean.length ? clean : defaultOrder
 })
+
+const archiveItems = ref([])
+const siteStats = ref({})
+const tagCloudItems = ref([])
+const categoryTree = ref([])
+const calendarData = ref({ year: new Date().getFullYear(), month: new Date().getMonth() + 1, days: [] })
+const weather = ref({})
+const now = ref(new Date())
+let clockTimer = null
+
+const weekdayHeaders = computed(() => {
+  const mondayFirst = widgetConfig.value.calendarStartWeekOn === 'monday'
+  return mondayFirst ? ['一', '二', '三', '四', '五', '六', '日'] : ['日', '一', '二', '三', '四', '五', '六']
+})
+
+const localDateText = computed(() =>
+  now.value.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })
+)
+const localTimeText = computed(() => now.value.toLocaleTimeString('zh-TW', { hour12: false }))
+
+const categoryRows = computed(() => {
+  const rows = []
+  const walk = (nodes, depth = 0) => {
+    nodes.forEach((n) => {
+      rows.push({ id: n.id, name: n.name, slug: n.slug, count: n.count ?? 0, depth })
+      if (Array.isArray(n.children) && n.children.length) walk(n.children, depth + 1)
+    })
+  }
+  walk(categoryTree.value || [])
+  return rows
+})
+
+const calendarCells = computed(() => {
+  const y = Number(calendarData.value.year || now.value.getFullYear())
+  const m = Number(calendarData.value.month || now.value.getMonth() + 1)
+  const first = new Date(y, m - 1, 1)
+  const total = new Date(y, m, 0).getDate()
+  const mondayFirst = widgetConfig.value.calendarStartWeekOn === 'monday'
+  const firstWeekday = mondayFirst ? (first.getDay() + 6) % 7 : first.getDay()
+  const dayMap = {}
+  ;(calendarData.value.days || []).forEach((d) => {
+    dayMap[d.day] = d.count
+  })
+  const cells = []
+  const outsideDays = widgetConfig.value.calendarShowOutsideDays !== false
+  for (let i = 0; i < firstWeekday; i += 1) {
+    cells.push({ key: `pre-${i}`, day: outsideDays ? '' : '', count: 0, current: false })
+  }
+  for (let day = 1; day <= total; day += 1) {
+    cells.push({ key: `cur-${day}`, day, count: dayMap[day] || 0, current: true })
+  }
+  while (cells.length % 7 !== 0) {
+    cells.push({ key: `post-${cells.length}`, day: outsideDays ? '' : '', count: 0, current: false })
+  }
+  return cells
+})
+
+function isEnabled(key) {
+  const enabled = widgetConfig.value.enabled || {}
+  return enabled[key] !== false
+}
+
+function widgetTitle(key, fallback) {
+  const titles = widgetConfig.value.titles || {}
+  return titles[key] || fallback
+}
+
+function tagHref(tagItem) {
+  const slug = encodeURIComponent(tagItem?.slug || tagItem?.name || '')
+  if (!slug) return '/'
+  if (tagItem?.kind === 'category') return `/categories/${slug}`
+  return `/?tag=${slug}`
+}
 
 function socialGlyph(key) {
   const k = (key || '').toLowerCase()
@@ -219,85 +306,62 @@ function socialGlyph(key) {
   return '·'
 }
 
-function setCollapsed(v) {
-  collapsed.value = v
-  try {
-    localStorage.setItem(COLLAPSE_KEY, v ? '1' : '0')
-  } catch (_) {}
-}
-
-async function toggleCat(slug) {
-  const idx = openCats.value.indexOf(slug)
-  if (idx > -1) {
-    openCats.value.splice(idx, 1)
-  } else {
-    openCats.value.push(slug)
-    if (!catArticles.value[slug]) {
-      await loadCatArticles(slug)
-    }
-  }
-}
-
-async function loadCatArticles(slug) {
-  try {
-    const res = await fetch(`${apiBase.value}/articles?category=${slug}&limit=30`, {
-      credentials: 'include',
-    })
-    if (res.ok) {
-      const json = await res.json()
-      catArticles.value[slug] = json.data || []
-    }
-  } catch {
-    catArticles.value[slug] = []
-  }
-}
-
 function goSearch() {
   if (query.value.trim()) {
     window.location.href = `/?q=${encodeURIComponent(query.value.trim())}`
   }
 }
 
-function isCurrentPage(slug) {
-  return typeof window !== 'undefined' && window.location.pathname === `/notes/${slug}`
+async function fetchWidget(path) {
+  const res = await fetch(`${apiBase.value}${path}`, { credentials: 'include' })
+  if (!res.ok) return null
+  const json = await res.json()
+  return json?.data ?? null
 }
 
-function onToggleDesktopCollapse() {
-  if (!isMobile.value) setCollapsed(!collapsed.value)
+async function loadWidgets() {
+  try {
+    const [archive, statsRes, cloud, tree, cal, weatherRes] = await Promise.all([
+      isEnabled('archive')
+        ? fetchWidget(`/widgets/archive?limit=${encodeURIComponent(widgetConfig.value.archiveLimit || 12)}`)
+        : Promise.resolve([]),
+      isEnabled('siteStats') ? fetchWidget('/widgets/site-stats') : Promise.resolve({}),
+      isEnabled('tagCloud')
+        ? fetchWidget(`/widgets/tag-cloud?limit=${encodeURIComponent(widgetConfig.value.tagCloudLimit || 30)}`)
+        : Promise.resolve([]),
+      isEnabled('categoryTree')
+        ? fetchWidget(`/widgets/category-tree?depth=${encodeURIComponent(widgetConfig.value.categoryTreeDepth || 4)}`)
+        : Promise.resolve([]),
+      isEnabled('postCalendar') ? fetchWidget('/widgets/post-calendar') : Promise.resolve(calendarData.value),
+      isEnabled('clockWeather') ? fetchWidget('/widgets/weather') : Promise.resolve({}),
+    ])
+    archiveItems.value = Array.isArray(archive) ? archive : []
+    siteStats.value = statsRes || {}
+    tagCloudItems.value = Array.isArray(cloud) ? cloud : []
+    categoryTree.value = Array.isArray(tree) ? tree : []
+    if (cal && typeof cal === 'object') calendarData.value = cal
+    weather.value = weatherRes || {}
+  } catch {
+    archiveItems.value = []
+    siteStats.value = {}
+    tagCloudItems.value = []
+    categoryTree.value = []
+  }
 }
 
 onMounted(() => {
-  mediaQuery = window.matchMedia('(max-width: 767px)')
-  syncMediaQuery = () => {
-    isMobile.value = mediaQuery.matches
-  }
-  syncMediaQuery()
-  mediaQuery.addEventListener('change', syncMediaQuery)
-
-  window.addEventListener('notes-sidebar:toggle-desktop', onToggleDesktopCollapse)
-
-  try {
-    collapsed.value = localStorage.getItem(COLLAPSE_KEY) === '1'
-  } catch (_) {}
-
-  const path = window.location.pathname
-  const match = path.match(/^\/notes\/(.+)$/)
-  if (match && props.categories.length > 0) {
-    const slug = props.categories[0].slug
-    openCats.value.push(slug)
-    loadCatArticles(slug)
-  }
+  loadWidgets()
+  clockTimer = window.setInterval(() => {
+    now.value = new Date()
+  }, 1000)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('notes-sidebar:toggle-desktop', onToggleDesktopCollapse)
-  if (mediaQuery && syncMediaQuery) {
-    mediaQuery.removeEventListener('change', syncMediaQuery)
-  }
+  if (clockTimer) window.clearInterval(clockTimer)
 })
 </script>
 
-<style scoped>
+<style>
 .slide-enter-active,
 .slide-leave-active {
   transition: all 0.2s ease;

@@ -5,7 +5,7 @@
     "singularName": "site-profile",
     "pluralName": "site-profiles",
     "displayName": "Site Profile",
-    "description": "側欄作者／引言／社群／授權等設定"
+    "description": "側欄作者／引言／社群／授權；技術筆記與部落格列表封面"
   },
   "options": {
     "draftAndPublish": false
@@ -52,6 +52,89 @@
       "default": 10,
       "min": 1,
       "max": 50
+    },
+    "notesHero": {
+      "type": "component",
+      "repeatable": false,
+      "component": "shared.page-hero"
+    },
+    "blogHero": {
+      "type": "component",
+      "repeatable": false,
+      "component": "shared.page-hero"
+    },
+    "articleHero": {
+      "type": "component",
+      "repeatable": false,
+      "component": "shared.page-hero"
+    },
+    "widgetsEnabled": {
+      "type": "json"
+    },
+    "widgetTitles": {
+      "type": "json"
+    },
+    "widgetOrder": {
+      "type": "json"
+    },
+    "archiveLimit": {
+      "type": "integer",
+      "default": 12,
+      "min": 1,
+      "max": 60
+    },
+    "siteLaunchDate": {
+      "type": "date"
+    },
+    "siteTimezone": {
+      "type": "string",
+      "default": "Asia/Taipei"
+    },
+    "plausibleSharedLink": {
+      "type": "string"
+    },
+    "plausibleSiteDomain": {
+      "type": "string"
+    },
+    "tagCloudLimit": {
+      "type": "integer",
+      "default": 30,
+      "min": 1,
+      "max": 200
+    },
+    "categoryTreeDepth": {
+      "type": "integer",
+      "default": 4,
+      "min": 1,
+      "max": 10
+    },
+    "calendarStartWeekOn": {
+      "type": "enumeration",
+      "enum": ["sunday", "monday"],
+      "default": "sunday"
+    },
+    "calendarShowOutsideDays": {
+      "type": "boolean",
+      "default": true
+    },
+    "weatherProvider": {
+      "type": "enumeration",
+      "enum": ["open-meteo"],
+      "default": "open-meteo"
+    },
+    "weatherCity": {
+      "type": "string"
+    },
+    "weatherLatitude": {
+      "type": "decimal"
+    },
+    "weatherLongitude": {
+      "type": "decimal"
+    },
+    "weatherTempUnit": {
+      "type": "enumeration",
+      "enum": ["celsius", "fahrenheit"],
+      "default": "celsius"
     }
   }
 }

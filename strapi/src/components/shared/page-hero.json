@@ -1,0 +1,23 @@
+{
+  "collectionName": "components_shared_page_heroes",
+  "info": {
+    "displayName": "區塊封面（全幅）",
+    "icon": "landscape",
+    "description": "技術筆記／部落格列表頂部全幅封面：背景圖、標題、副標"
+  },
+  "options": {},
+  "attributes": {
+    "coverImage": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["images"]
+    },
+    "title": {
+      "type": "string"
+    },
+    "subtitle": {
+      "type": "text"
+    }
+  }
+}

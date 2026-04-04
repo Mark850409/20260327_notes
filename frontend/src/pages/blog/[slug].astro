@@ -1,0 +1,95 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import NotFoundPage from '../../components/NotFoundPage.astro';
+import { backendFetchInit } from '../../lib/backendFetch';
+import { blogBodyToHtml } from '../../lib/blogBodyToHtml';
+
+const { slug } = Astro.params;
+const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
+const beInit = backendFetchInit(Astro.request);
+
+let post: any = null;
+let error: string | null = null;
+
+try {
+  const res = await fetch(`${apiBase}/api/blog-posts/${slug}`, beInit);
+  if (res.status === 401) {
+    return Astro.redirect('/login?reason=session');
+  }
+  if (res.ok) {
+    const json = await res.json();
+    post = json.data;
+  } else if (res.status === 404) {
+    error = 'not_found';
+  } else {
+    error = 'server_error';
+  }
+} catch (e) {
+  error = 'network_error';
+}
+
+if (!post && error === 'not_found') {
+  Astro.response.status = 404;
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+const bodyHtml = blogBodyToHtml(post?.body);
+---
+
+{!post && error === 'not_found' ? (
+  <NotFoundPage />
+) : (
+  <BaseLayout title={post?.title ?? 'Blog Post'} description={post?.excerpt ?? ''}>
+    {error ? (
+      <div class="mx-auto w-full max-w-content px-4 py-12 md:px-6">
+        <div class="rounded-xl border border-zinc-200 bg-white p-10 text-center text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+          <p class="mb-3 text-5xl opacity-40">⚠</p>
+          <h1 class="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">無法載入部落格文章</h1>
+          <p class="mt-2">請確認 API 服務是否正常運行。</p>
+          <a href="/blog" class="mt-5 inline-block rounded-full border border-accent px-5 py-2 text-sm font-semibold text-accent hover:bg-accent hover:text-white">← 返回部落格</a>
+        </div>
+      </div>
+    ) : (
+      <div class="mx-auto w-full max-w-[980px] px-4 py-8 pb-16 md:px-6">
+        <nav class="mb-5 flex flex-wrap items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400" aria-label="Breadcrumb">
+          <a href="/" class="hover:text-accent">首頁</a>
+          <span class="text-zinc-400">›</span>
+          <a href="/blog" class="hover:text-accent">部落格</a>
+          <span class="text-zinc-400">›</span>
+          <span class="text-zinc-700 dark:text-zinc-300">{post.title}</span>
+        </nav>
+
+        <article class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+          {post.cover?.url && (
+            <img src={post.cover.url} alt={post.title} class="h-64 w-full object-cover md:h-80" loading="lazy" />
+          )}
+          <div class="p-6 md:p-10">
+            <header class="mb-8">
+              <p class="text-xs font-semibold uppercase tracking-wide text-accent">Blog</p>
+              <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{post.title}</h1>
+              {post.excerpt && <p class="mt-4 text-zinc-600 dark:text-zinc-400">{post.excerpt}</p>}
+              <div class="mt-4 flex items-center gap-2 text-xs text-zinc-500">
+                <span>{formatDate(post.published_at)}</span>
+              </div>
+              <div class="mt-5 h-[3px] w-24 rounded bg-gradient-to-r from-accent to-sky-300" aria-hidden="true"></div>
+            </header>
+
+            <div
+              class="prose prose-zinc max-w-none dark:prose-invert prose-headings:scroll-mt-24 prose-a:text-accent prose-a:hover:text-sky-400 prose-img:rounded-xl prose-img:shadow-sm"
+              set:html={bodyHtml || '<p>無內容</p>'}
+            />
+
+            <footer class="mt-10 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+              <a href="/blog" class="text-sm font-medium text-zinc-500 hover:text-accent">← 返回部落格列表</a>
+            </footer>
+          </div>
+        </article>
+      </div>
+    )}
+  </BaseLayout>
+)}
+

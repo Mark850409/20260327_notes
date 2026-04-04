@@ -12,7 +12,12 @@ const {
   resolveOwnerDocumentScope,
 } = require('./utils/owner-document-scope');
 
-const OWNER_SCOPED_CONTENT_TYPES = ['api::article.article', 'api::category.category'];
+const OWNER_SCOPED_CONTENT_TYPES = [
+  'api::article.article',
+  'api::category.category',
+  'api::blog-post.blog-post',
+  'api::tag.tag',
+];
 
 module.exports = {
   /**
@@ -190,6 +195,22 @@ module.exports = {
 
     strapi.db.lifecycles.subscribe({
       models: ['api::category.category'],
+      async beforeCreate(event) {
+        const data = event?.params?.data;
+        if (data && (data.owner === undefined || data.owner === null)) {
+          const def = process.env.STRAPI_DEFAULT_ARTICLE_OWNER_ID;
+          if (def) {
+            const n = parseInt(String(def).trim(), 10);
+            if (!Number.isNaN(n) && n > 0) {
+              data.owner = await buildOwnerRelationValue(strapi, n);
+            }
+          }
+        }
+      },
+    });
+
+    strapi.db.lifecycles.subscribe({
+      models: ['api::tag.tag'],
       async beforeCreate(event) {
         const data = event?.params?.data;
         if (data && (data.owner === undefined || data.owner === null)) {

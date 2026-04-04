@@ -1,7 +1,12 @@
 <template>
   <button
     type="button"
-    class="flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-500 shadow-sm transition hover:border-accent hover:text-accent hover:shadow-[0_0_0_2px_rgba(73,177,245,0.12)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+    :class="[
+      'flex h-9 w-9 items-center justify-center rounded-xl border text-sm shadow-sm transition',
+      overlay
+        ? 'border-white/25 bg-white/10 text-white hover:border-white/40 hover:bg-white/20 hover:text-white'
+        : 'border-zinc-200 bg-white text-zinc-500 hover:border-accent hover:text-accent hover:shadow-[0_0_0_2px_rgba(73,177,245,0.12)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400',
+    ]"
     :title="isDark ? '切換至淺色主題' : '切換至深色主題'"
     aria-label="Toggle theme"
     @click="toggle"
@@ -15,6 +20,10 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+
+defineProps({
+  overlay: { type: Boolean, default: false },
+})
 
 const isDark = ref(false)
 

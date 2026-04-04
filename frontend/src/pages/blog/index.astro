@@ -1,0 +1,140 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SectionHero from '../../components/SectionHero.astro';
+import { backendFetchInit } from '../../lib/backendFetch';
+
+const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
+const beInit = backendFetchInit(Astro.request);
+
+const url = Astro.url;
+const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+const q = url.searchParams.get('q')?.trim() || '';
+
+let posts: any[] = [];
+let totalCount = 0;
+let totalPages = 1;
+let blogHero: { coverUrl?: string; title?: string; subtitle?: string } | null = null;
+
+const qs = new URLSearchParams();
+qs.set('page', String(page));
+qs.set('limit', '10');
+if (q) qs.set('q', q);
+
+try {
+  const [profRes, res] = await Promise.all([
+    fetch(`${apiBase}/api/site-profile`, beInit),
+    fetch(`${apiBase}/api/blog-posts?${qs.toString()}`, beInit),
+  ]);
+  if (profRes.status === 401 || res.status === 401) {
+    return Astro.redirect('/login?reason=session');
+  }
+  if (profRes.ok) {
+    const pj = await profRes.json();
+    blogHero = pj.data?.blogHero ?? null;
+  }
+  if (res.ok) {
+    const j = await res.json();
+    posts = j.data || [];
+    totalCount = j.meta?.total ?? 0;
+    totalPages = Math.max(1, j.meta?.pages ?? 1);
+  }
+} catch (e) {}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function pageHref(p: number): string {
+  const x = new URLSearchParams();
+  if (p > 1) x.set('page', String(p));
+  if (q) x.set('q', q);
+  const s = x.toString();
+  return s ? `/blog?${s}` : '/blog';
+}
+---
+
+<BaseLayout title="部落格" headerOverlay>
+  <Fragment slot="hero">
+    <SectionHero
+      coverUrl={blogHero?.coverUrl}
+      title={blogHero?.title}
+      subtitle={blogHero?.subtitle}
+      overlayHeader
+    />
+  </Fragment>
+  <div id="content-start" class="mx-auto w-full max-w-[1100px] px-4 py-8 pb-16 md:px-6">
+    <div class="mb-6 text-sm text-zinc-500 dark:text-zinc-400">
+      {totalCount} 篇文章
+      {q && ` · 搜尋：「${q}」`}
+    </div>
+
+    <section class="flex flex-col gap-5" aria-label="部落格列表">
+      {
+        posts.length === 0 ? (
+          <div class="rounded-xl border border-dashed border-zinc-300 bg-white p-12 text-center text-zinc-500 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <p class="mb-2 text-4xl opacity-40">⊘</p>
+            <p>尚無部落格文章。請至 Strapi 後台建立 Blog Post。</p>
+            <a
+              href="/admin"
+              class="mt-4 inline-block rounded-full border border-accent px-4 py-2 text-sm font-medium text-accent hover:bg-accent/10"
+              >前往 CMS 後台</a
+            >
+          </div>
+        ) : (
+          posts.map((p: any) => (
+            <article class="group overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition hover:border-sky-300/80 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900">
+              {p.cover?.url && (
+                <a href={`/blog/${p.slug}`} class="block">
+                  <img
+                    src={p.cover.url}
+                    alt={p.title}
+                    loading="lazy"
+                    class="h-56 w-full object-cover transition duration-300 group-hover:scale-[1.01]"
+                  />
+                </a>
+              )}
+              <div class="p-6">
+                <h2 class="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  <a href={`/blog/${p.slug}`} class="hover:text-accent">{p.title}</a>
+                </h2>
+                {p.excerpt && (
+                  <p class="mt-3 line-clamp-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                    {p.excerpt}
+                  </p>
+                )}
+                <div class="mt-4 flex items-center justify-between border-t border-zinc-100 pt-4 text-xs text-zinc-500 dark:border-zinc-800">
+                  <span>{formatDate(p.published_at)}</span>
+                  <a href={`/blog/${p.slug}`} class="font-semibold text-accent hover:text-sky-400">閱讀 →</a>
+                </div>
+              </div>
+            </article>
+          ))
+        )
+      }
+    </section>
+
+    {
+      totalPages > 1 && posts.length > 0 && (
+        <nav class="mt-10 flex flex-wrap items-center justify-center gap-2 border-t border-zinc-200 pt-8 dark:border-zinc-800" aria-label="分頁">
+          {page > 1 ? (
+            <a href={pageHref(page - 1)} class="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:border-accent hover:text-accent dark:border-zinc-600 dark:bg-zinc-900">
+              上一頁
+            </a>
+          ) : (
+            <span class="cursor-not-allowed rounded-lg px-4 py-2 text-sm text-zinc-400">上一頁</span>
+          )}
+          <span class="px-3 text-sm text-zinc-600 dark:text-zinc-400">第 {page} / {totalPages} 頁</span>
+          {page < totalPages ? (
+            <a href={pageHref(page + 1)} class="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:border-accent hover:text-accent dark:border-zinc-600 dark:bg-zinc-900">
+              下一頁
+            </a>
+          ) : (
+            <span class="cursor-not-allowed rounded-lg px-4 py-2 text-sm text-zinc-400">下一頁</span>
+          )}
+        </nav>
+      )
+    }
+  </div>
+</BaseLayout>
+

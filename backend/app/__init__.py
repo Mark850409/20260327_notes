@@ -29,6 +29,7 @@ categories_tag = Tag(name="Categories", description="Category management")
 tags_tag       = Tag(name="Tags",       description="Tag management")
 health_tag     = Tag(name="Health",       description="Service health check")
 site_profile_tag = Tag(name="SiteProfile", description="Site sidebar profile")
+blog_posts_tag = Tag(name="BlogPosts", description="Blog post listing and reading")
 
 
 def create_app(config=None) -> OpenAPI:
@@ -48,6 +49,8 @@ def create_app(config=None) -> OpenAPI:
     from .routes.health       import health_bp
     from .routes.site_profile import site_profile_bp
     from .routes.auth import auth_bp
+    from .routes.blog_posts import blog_posts_bp
+    from .routes.widgets import widgets_bp
 
     app.register_api(articles_bp)
     app.register_api(categories_bp)
@@ -55,5 +58,7 @@ def create_app(config=None) -> OpenAPI:
     app.register_api(health_bp)
     app.register_api(site_profile_bp)
     app.register_api(auth_bp)
+    app.register_api(blog_posts_bp)
+    app.register_api(widgets_bp)
 
     return app

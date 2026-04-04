@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import SearchBox from '../components/SearchBox.vue';
+import SectionHero from '../components/SectionHero.astro';
 import { backendFetchInit } from '../lib/backendFetch';
 
 const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
@@ -13,11 +13,18 @@ const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1)
 const q = url.searchParams.get('q')?.trim() || '';
 const tag = url.searchParams.get('tag')?.trim() || '';
 
+const sortAllowed = new Set(['title', 'published_at', 'category', 'word_count', 'reading_time']);
+const rawSort = (url.searchParams.get('sort') || 'title').toLowerCase();
+const sortBy = sortAllowed.has(rawSort) ? rawSort : 'title';
+const rawOrder = (url.searchParams.get('order') || 'asc').toLowerCase();
+const sortOrder = rawOrder === 'desc' ? 'desc' : 'asc';
+
 let articles: any[] = [];
 let categories: any[] = [];
 let totalCount = 0;
 let totalPages = 1;
 let postsPerPage = 10;
+let notesHero: { coverUrl?: string; title?: string; subtitle?: string } | null = null;
 
 try {
   const profRes = await fetch(`${apiBase}/api/site-profile`, beInit);
@@ -28,6 +35,7 @@ try {
     const j = await profRes.json();
     const n = Number(j.data?.postsPerPage);
     if (Number.isFinite(n) && n >= 1 && n <= 50) postsPerPage = Math.floor(n);
+    notesHero = j.data?.notesHero ?? null;
   }
 } catch (e) {}
 
@@ -36,6 +44,8 @@ qs.set('page', String(page));
 qs.set('limit', String(postsPerPage));
 if (q) qs.set('q', q);
 if (tag) qs.set('tag', tag);
+qs.set('sort', sortBy);
+qs.set('order', sortOrder);
 
 try {
   const [artRes, catRes] = await Promise.all([
@@ -59,19 +69,27 @@ try {
 
 function formatDate(iso: string | null): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString('zh-TW', {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('zh-TW', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
 }
 
-function pageHref(p: number): string {
+function listQueryString(p: number): string {
   const x = new URLSearchParams();
   if (p > 1) x.set('page', String(p));
   if (q) x.set('q', q);
   if (tag) x.set('tag', tag);
-  const s = x.toString();
+  x.set('sort', sortBy);
+  x.set('order', sortOrder);
+  return x.toString();
+}
+
+function pageHref(p: number): string {
+  const s = listQueryString(p);
   return s ? `/?${s}` : '/';
 }
 
@@ -88,45 +106,131 @@ function summaryText(input: string | null): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+function countReadableUnits(input: string | null): number {
+  const text = summaryText(input);
+  if (!text) return 0;
+  const cjkChars = (text.match(/[\u3400-\u9FFF]/g) || []).length;
+  const nonCjk = text.replace(/[\u3400-\u9FFF]/g, ' ');
+  const latinWords = (nonCjk.match(/[A-Za-z0-9_]+/g) || []).length;
+  return cjkChars + latinWords;
+}
+
+function formatWordCount(units: number): string {
+  if (units >= 1000) {
+    const k = units / 1000;
+    const fixed = k >= 10 ? k.toFixed(0) : k.toFixed(1);
+    return `${fixed.replace(/\.0$/, '')}k`;
+  }
+  return String(units);
+}
+
+function estimateReadingMinutes(units: number): number {
+  return Math.max(1, Math.ceil(units / 300));
+}
+
+function buildPaginationTokens(current: number, total: number): Array<number | '...'> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = new Set<number>([1, total, current - 1, current, current + 1]);
+  if (current <= 3) pages.add(2), pages.add(3), pages.add(4);
+  if (current >= total - 2) pages.add(total - 1), pages.add(total - 2), pages.add(total - 3);
+  const sorted = Array.from(pages).filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
+  const out: Array<number | '...'> = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const val = sorted[i];
+    const prev = sorted[i - 1];
+    if (i > 0 && val - prev > 1) out.push('...');
+    out.push(val);
+  }
+  return out;
+}
 ---
 
-<BaseLayout title={siteTitle} description={siteDesc}>
-  <div class="mx-auto w-full max-w-content px-4 py-8 pb-16 md:px-6">
-    <div class="mb-6 text-sm text-zinc-500">
+<BaseLayout title={siteTitle} description={siteDesc} headerOverlay>
+  <Fragment slot="hero">
+    <SectionHero
+      coverUrl={notesHero?.coverUrl}
+      title={notesHero?.title}
+      subtitle={notesHero?.subtitle}
+      overlayHeader
+    />
+  </Fragment>
+  <div id="content-start" class="mx-auto w-full max-w-content scroll-mt-24 px-4 py-8 pb-16 md:px-6">
+    <nav
+      class="mb-4 flex flex-wrap items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400"
+      aria-label="麵包屑"
+    >
+      <a href="/" class="hover:text-accent">首頁</a>
+      <span class="text-zinc-400">›</span>
+      <span class="text-zinc-700 dark:text-zinc-300">技術筆記</span>
+      {q && (
+        <>
+          <span class="text-zinc-400">›</span>
+          <span class="text-zinc-700 dark:text-zinc-300">搜尋「{q}」</span>
+        </>
+      )}
+      {tag && (
+        <>
+          <span class="text-zinc-400">›</span>
+          <span class="text-zinc-700 dark:text-zinc-300">標籤：{tag}</span>
+        </>
+      )}
+    </nav>
+
+    <div class="mb-6 text-sm text-zinc-500 dark:text-zinc-400">
       {totalCount} 篇文章 · {categories.length} 個分類 · 每頁 {postsPerPage} 篇
       {q && ` · 搜尋：「${q}」`}
       {tag && ` · 標籤：${tag}`}
     </div>
 
-    <div class="mb-6">
-      <SearchBox client:load apiBase={apiBase} />
-    </div>
-
-    {
-      categories.length > 0 && (
-        <nav class="mb-8 flex flex-wrap gap-2" aria-label="分類">
-          <a
-            href={tag || q ? '/' : '/'}
-            class:list={[
-              'inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium transition-colors',
-              !tag && !q
-                ? 'border-accent bg-accent text-white'
-                : 'border-zinc-300 bg-white text-zinc-600 hover:border-accent hover:text-accent dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-400',
-            ]}
-          >
-            全部
-          </a>
-          {categories.map((cat: any) => (
-            <a
-              href={`/categories/${cat.slug}`}
-              class="inline-flex items-center rounded-full border border-zinc-300 bg-white px-3 py-1 text-sm font-medium text-zinc-600 transition-colors hover:border-accent hover:text-accent dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-400"
-            >
-              {cat.name}
-            </a>
-          ))}
-        </nav>
-      )
-    }
+    <form
+      method="get"
+      class="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
+      aria-label="排序"
+    >
+      <input type="hidden" name="page" value="1" />
+      {q && <input type="hidden" name="q" value={q} />}
+      {tag && <input type="hidden" name="tag" value={tag} />}
+      <label class="flex min-w-[10rem] flex-col gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+        排序依據
+        <select
+          name="sort"
+          class="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+          onchange="this.form.requestSubmit()"
+        >
+          <option value="title" selected={sortBy === 'title'}>
+            名稱
+          </option>
+          <option value="published_at" selected={sortBy === 'published_at'}>
+            發表時間
+          </option>
+          <option value="category" selected={sortBy === 'category'}>
+            分類
+          </option>
+          <option value="word_count" selected={sortBy === 'word_count'}>
+            文章字數
+          </option>
+          <option value="reading_time" selected={sortBy === 'reading_time'}>
+            閱讀時間
+          </option>
+        </select>
+      </label>
+      <label class="flex min-w-[8rem] flex-col gap-1 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+        順序
+        <select
+          name="order"
+          class="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+          onchange="this.form.requestSubmit()"
+        >
+          <option value="asc" selected={sortOrder === 'asc'}>
+            升冪
+          </option>
+          <option value="desc" selected={sortOrder === 'desc'}>
+            降冪
+          </option>
+        </select>
+      </label>
+    </form>
 
     <section class="flex flex-col gap-5" aria-label="文章列表">
       {
@@ -143,41 +247,77 @@ function summaryText(input: string | null): string {
           </div>
         ) : (
           articles.map((article: any) => (
-            <article class="flex flex-col rounded-xl border border-zinc-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300/80 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900">
-              {article.category && (
-                <a
-                  href={`/categories/${article.category.slug}`}
-                  class="mb-2 text-xs font-semibold uppercase tracking-wide text-accent"
-                >
-                  {article.category.name}
-                </a>
-              )}
-              <h2 class="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-                <a href={`/notes/${article.slug}`} class="hover:text-accent">
+            <article class="rounded-xl border border-zinc-200 bg-white p-7 shadow-sm transition hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900">
+              <h2 class="text-2xl font-extrabold leading-tight text-accent md:text-3xl">
+                <a href={`/notes/${article.slug}`} class="hover:opacity-85">
                   {article.title}
                 </a>
               </h2>
+              {
+                (() => {
+                  const textUnits = countReadableUnits(article.content || article.description || article.title || '');
+                  const readingMinutes = estimateReadingMinutes(textUnits);
+                  return (
+                    <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                      <span class="inline-flex items-center gap-1.5">
+                        <i class="ri-calendar-line text-base leading-none text-zinc-400 dark:text-zinc-500" aria-hidden="true"></i>
+                        <span>
+                          發表於 {formatDate(article.published_at) || '—'}
+                        </span>
+                      </span>
+                      <span class="inline-flex items-center gap-1.5">
+                        <i class="ri-folder-3-line text-base leading-none text-zinc-400 dark:text-zinc-500" aria-hidden="true"></i>
+                        <span>
+                          分類於{' '}
+                          {article.category?.slug ? (
+                            <a
+                              href={`/categories/${article.category.slug}`}
+                              class="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+                            >
+                              {article.category.name || article.category.slug}
+                            </a>
+                          ) : (
+                            <a
+                              href="/categories/_uncategorized"
+                              class="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+                            >
+                              未分類
+                            </a>
+                          )}
+                        </span>
+                      </span>
+                      <span class="inline-flex items-center gap-1.5">
+                        <i class="ri-file-text-line text-base leading-none text-zinc-400 dark:text-zinc-500" aria-hidden="true"></i>
+                        <span>文章字數 {formatWordCount(textUnits)}</span>
+                      </span>
+                      <span class="inline-flex items-center gap-1.5">
+                        <i class="ri-time-line text-base leading-none text-zinc-400 dark:text-zinc-500" aria-hidden="true"></i>
+                        <span>所需閱讀時間 {readingMinutes} 分鐘</span>
+                      </span>
+                    </div>
+                  );
+                })()
+              }
               {article.description && (
-                <p class="mt-3 line-clamp-3 text-zinc-600 dark:text-zinc-400">{summaryText(article.description)}</p>
+                <p class="mt-4 line-clamp-3 text-zinc-600 dark:text-zinc-400">{summaryText(article.description)}</p>
               )}
-              <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-                <span class="text-xs text-zinc-500">{formatDate(article.published_at)}</span>
+              <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
                 <div class="flex flex-wrap items-center gap-2">
-                  {article.tags?.slice(0, 4).map((t: any) => (
+                  {article.tags?.slice(0, 6).map((t: any) => (
                     <a
                       href={`/?tag=${encodeURIComponent(t.slug)}`}
-                      class="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 hover:bg-accent/15 hover:text-accent dark:bg-zinc-800 dark:text-zinc-400"
+                      class="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs text-zinc-600 hover:border-accent hover:text-accent dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                     >
                       {t.name}
                     </a>
                   ))}
-                  <a
-                    href={`/notes/${article.slug}`}
-                    class="rounded-full bg-accent px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
-                  >
-                    閱讀更多
-                  </a>
                 </div>
+                <a
+                  href={`/notes/${article.slug}`}
+                  class="rounded-full bg-accent px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
+                >
+                  閱讀更多
+                </a>
               </div>
             </article>
           ))
@@ -187,37 +327,53 @@ function summaryText(input: string | null): string {
 
     {
       totalPages > 1 && articles.length > 0 && (
-        <nav
-          class="mt-10 flex flex-wrap items-center justify-center gap-2 border-t border-zinc-200 pt-8 dark:border-zinc-800"
-          aria-label="分頁"
-        >
-          {page > 1 ? (
-            <a
-              href={pageHref(page - 1)}
-              class="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:border-accent hover:text-accent dark:border-zinc-600 dark:bg-zinc-900"
-            >
-              上一頁
-            </a>
-          ) : (
-            <span class="cursor-not-allowed rounded-lg border border-transparent px-4 py-2 text-sm text-zinc-400">
-              上一頁
-            </span>
-          )}
-          <span class="px-3 text-sm text-zinc-600 dark:text-zinc-400">
-            第 {page} / {totalPages} 頁
-          </span>
-          {page < totalPages ? (
-            <a
-              href={pageHref(page + 1)}
-              class="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:border-accent hover:text-accent dark:border-zinc-600 dark:bg-zinc-900"
-            >
-              下一頁
-            </a>
-          ) : (
-            <span class="cursor-not-allowed rounded-lg border border-transparent px-4 py-2 text-sm text-zinc-400">
-              下一頁
-            </span>
-          )}
+        <nav class="mt-10 flex items-center justify-center border-t border-zinc-200 pt-8 dark:border-zinc-800" aria-label="分頁">
+          <div class="inline-flex items-center gap-1 rounded-xl border border-zinc-200 bg-white px-2 py-2 text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+            {page > 1 ? (
+              <a
+                href={pageHref(page - 1)}
+                class="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
+                aria-label="上一頁"
+              >
+                <i class="ri-arrow-left-s-line text-lg leading-none"></i>
+              </a>
+            ) : (
+              <span class="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-600" aria-hidden="true">
+                <i class="ri-arrow-left-s-line text-lg leading-none"></i>
+              </span>
+            )}
+
+            {buildPaginationTokens(page, totalPages).map((token) =>
+              token === '...' ? (
+                <span class="inline-flex h-9 min-w-8 items-center justify-center px-1 text-zinc-400 dark:text-zinc-500">...</span>
+              ) : token === page ? (
+                <span class="inline-flex h-9 min-w-9 items-center justify-center rounded-md border border-dashed border-zinc-400 bg-zinc-100 px-2 text-sm font-semibold text-zinc-900 dark:border-zinc-400 dark:bg-zinc-800 dark:text-white">
+                  {token}
+                </span>
+              ) : (
+                <a
+                  href={pageHref(token)}
+                  class="inline-flex h-9 min-w-9 items-center justify-center rounded-md px-2 text-sm text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
+                >
+                  {token}
+                </a>
+              )
+            )}
+
+            {page < totalPages ? (
+              <a
+                href={pageHref(page + 1)}
+                class="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
+                aria-label="下一頁"
+              >
+                <i class="ri-arrow-right-s-line text-lg leading-none"></i>
+              </a>
+            ) : (
+              <span class="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-600" aria-hidden="true">
+                <i class="ri-arrow-right-s-line text-lg leading-none"></i>
+              </span>
+            )}
+          </div>
         </nav>
       )
     }
