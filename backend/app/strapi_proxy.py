@@ -12,12 +12,8 @@ def strapi_auth_headers() -> dict:
     if auth and auth.strip():
         h["Authorization"] = auth.strip()
         return h
-    cookie = request.headers.get("Cookie") or ""
-    for part in cookie.split(";"):
-        part = part.strip()
-        if part.startswith(f"{NOTES_AUTH_COOKIE}="):
-            token = part.split("=", 1)[1].strip()
-            if token:
-                h["Authorization"] = f"Bearer {token}"
-            break
+    # 使用 Werkzeug 解析的 Cookie（RFC 6265：引號、轉義、編碼），避免手動 split 導致 JWT 含引號時 Strapi 回 401。
+    token = request.cookies.get(NOTES_AUTH_COOKIE)
+    if token:
+        h["Authorization"] = f"Bearer {token.strip()}"
     return h

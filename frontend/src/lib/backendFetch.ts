@@ -1,5 +1,17 @@
-/** SSR：把瀏覽器 Cookie（含 notes_auth）轉給 Flask，以通過 Strapi 權限。 */
+/** SSR：把瀏覽器 Cookie 與反向代理相關標頭轉給 Flask（與瀏覽器直連 /api 時行為一致）。 */
+const FORWARD_HEADER_NAMES = [
+  'cookie',
+  'x-forwarded-proto',
+  'x-forwarded-host',
+  'x-forwarded-for',
+  'host',
+] as const;
+
 export function backendFetchInit(request: Request): RequestInit {
-  const cookie = request.headers.get('cookie');
-  return cookie ? { headers: { Cookie: cookie } } : {};
+  const headers: Record<string, string> = {};
+  for (const name of FORWARD_HEADER_NAMES) {
+    const v = request.headers.get(name);
+    if (v) headers[name] = v;
+  }
+  return Object.keys(headers).length > 0 ? { headers } : {};
 }
