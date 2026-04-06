@@ -22,6 +22,7 @@ def _cookie_secure() -> bool:
     notes_auth 是否加 Secure。NAS 常見錯誤：瀏覽器用 HTTPS，但此處為 False，部分環境會拒收 Cookie；
     或設 True 卻只用 http:// 內網 IP 存取，瀏覽器會直接丟棄 Set-Cookie。
     未設定 FLASK_COOKIE_SECURE 時為 auto：依 X-Forwarded-Proto / is_secure 判斷（需 Nginx 轉發 Proto）。
+    Cloudflare / 部分反向代理只帶 Forwarded 或 CF-Visitor，故一併偵測。
     """
     raw = os.getenv("FLASK_COOKIE_SECURE", "").strip().lower()
     if raw in ("1", "true", "yes", "on"):
@@ -30,6 +31,17 @@ def _cookie_secure() -> bool:
         return False
     proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
     if proto == "https":
+        return True
+    # RFC 7239：Forwarded: proto=https;host=...
+    for segment in (request.headers.get("Forwarded") or "").split(","):
+        s = segment.replace(" ", "").lower()
+        if "proto=https" in s:
+            return True
+    # Cloudflare → origin
+    cf = request.headers.get("CF-Visitor") or ""
+    if '"scheme":"https"' in cf.replace(" ", ""):
+        return True
+    if (request.headers.get("X-Forwarded-Ssl") or "").lower() == "on":
         return True
     return bool(request.is_secure)
 

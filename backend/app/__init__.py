@@ -7,6 +7,8 @@ mirroring Strapi's auto-generated table schema.
 from flask_openapi3 import OpenAPI, Info, Tag
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 from .config import Config
 
 # ── Extensions (created here, initialised in factory) ───────
@@ -60,5 +62,8 @@ def create_app(config=None) -> OpenAPI:
     app.register_api(auth_bp)
     app.register_api(blog_posts_bp)
     app.register_api(widgets_bp)
+
+    # 經 Nginx／Cloudflare 時讓 request.is_secure、Host 等與對外連線一致（Cookie Secure、URL 生成）。
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
     return app
