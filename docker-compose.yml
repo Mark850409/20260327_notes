@@ -15,7 +15,7 @@ services:
     ports:
       - "${MYSQL_HOST_PORT:-3306}:3306"
     networks:
-      - notes_net
+      - ai-network
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
@@ -63,7 +63,7 @@ services:
       # Admin 開發用 Vite（常為 24678）；未映射時瀏覽器連對應主機埠會 ERR_CONNECTION_REFUSED
       - "${STRAPI_ADMIN_VITE_PORT:-24678}:24678"
     networks:
-      - notes_net
+      - ai-network
     healthcheck:
       # node:alpine 常無 wget；Strapi 預設亦無 /_health（見 src/index.js register）
       test:
@@ -100,7 +100,7 @@ services:
     ports:
       - "${BACKEND_HOST_PORT:-5000}:5000"
     networks:
-      - notes_net
+      - ai-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 15s
@@ -127,7 +127,7 @@ services:
     ports:
       - "${FRONTEND_HOST_PORT:-4321}:4321"
     networks:
-      - notes_net
+      - ai-network
 
   # ── Nginx Reverse Proxy ───────────────────────────────────
   nginx:
