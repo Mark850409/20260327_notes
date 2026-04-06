@@ -220,6 +220,11 @@ export default function NotesImportPage() {
         支援多檔與<strong>多個資料夾</strong>：可重複按「選擇資料夾」累加；若瀏覽器支援，同一對話框內可複選多個資料夾（Chrome／Edge 較常見）。資料夾會遞迴包含 .md；frontmatter 優先，缺值才使用檔名/路徑補值。
       </p>
       <p style={{ color: '#666', marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
+        <b>AI 自動生成</b>：匯入時會呼叫 OpenAI（需設定{' '}
+        <code>OPENAI_API_KEY</code>）自動產生<strong>摘要</strong>（description）、<strong>分類</strong>（最多 1 個）與<strong>標籤</strong>（最多 5 個）。
+        若 frontmatter 已含 <code>tags</code>，將優先沿用；未設定 API Key 時分類退回路徑推斷，摘要退回內文首行。
+      </p>
+      <p style={{ color: '#666', marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         <b>API 使用者（擁有者）</b>：匯入的文章與<strong>自動建立的分類</strong>會歸屬該「使用者與權限」帳號。請從下拉選單選擇；選「使用環境變數預設」時改讀{' '}
         <code>STRAPI_DEFAULT_ARTICLE_OWNER_ID</code>（或 <code>STRAPI_IMPORT_DEFAULT_OWNER_ID</code>），皆無則匯入會失敗。
       </p>
@@ -454,7 +459,8 @@ export default function NotesImportPage() {
                   <th style={{ textAlign: 'left', padding: 8, width: 100 }}>結果</th>
                   <th style={{ textAlign: 'left', padding: 8 }}>訊息</th>
                   <th style={{ textAlign: 'left', padding: 8, width: 120 }}>slug</th>
-                  <th style={{ textAlign: 'left', padding: 8, width: 180 }}>分類</th>
+                  <th style={{ textAlign: 'left', padding: 8, width: 160 }}>分類</th>
+                  <th style={{ textAlign: 'left', padding: 8, width: 200 }}>標籤</th>
                 </tr>
               </thead>
               <tbody>
@@ -465,6 +471,27 @@ export default function NotesImportPage() {
                     <td style={{ padding: 8 }}>{r.message || '-'}</td>
                     <td style={{ padding: 8 }}>{r.slug || '-'}</td>
                     <td style={{ padding: 8 }}>{r.category || '-'}</td>
+                    <td style={{ padding: 8 }}>
+                      {Array.isArray(r.tags) && r.tags.length
+                        ? r.tags.map((t, ti) => (
+                            <span
+                              key={ti}
+                              style={{
+                                display: 'inline-block',
+                                margin: '1px 3px 1px 0',
+                                padding: '1px 7px',
+                                borderRadius: 12,
+                                background: '#f0f4ff',
+                                border: '1px solid #c5d0f5',
+                                fontSize: 11,
+                                color: '#3355bb',
+                              }}
+                            >
+                              {t}
+                            </span>
+                          ))
+                        : <span style={{ color: '#aaa' }}>-</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -4,7 +4,8 @@
   "info": {
     "singularName": "category",
     "pluralName": "categories",
-    "displayName": "category"
+    "displayName": "category",
+    "mainField": "name"
   },
   "options": {
     "draftAndPublish": true
@@ -15,7 +16,8 @@
       "type": "string"
     },
     "slug": {
-      "type": "string"
+      "type": "uid",
+      "targetField": "name"
     },
     "articles": {
       "type": "relation",

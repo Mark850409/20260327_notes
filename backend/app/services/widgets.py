@@ -138,7 +138,8 @@ def build_archive(limit=12):
     return out
 
 
-def build_tag_cloud(limit=30):
+def _build_tag_cloud_items(limit=30):
+    """Same list the tag-cloud widget returns (tags from articles, else category pills)."""
     # Prefer aggregating from articles, because some Strapi setups
     # may not expose /api/tags consistently while article tags still exist.
     article_rows = _fetch_all(
@@ -172,7 +173,8 @@ def build_tag_cloud(limit=30):
         # relation form
         for t in _relation_list(tags):
             attrs = _as_attrs(t)
-            _add_tag(attrs.get("name") or t.get("name"), attrs.get("slug") or t.get("slug"), t.get("id"))
+            tid = t.get("id") or t.get("documentId") or attrs.get("documentId")
+            _add_tag(attrs.get("name") or t.get("name"), attrs.get("slug") or t.get("slug"), tid)
 
         # custom-field form fallback (array of strings/dicts)
         if isinstance(tags, list):
@@ -184,8 +186,9 @@ def build_tag_cloud(limit=30):
 
     tags_list = [v for v in counter.values() if v.get("name")]
     tags_list.sort(key=lambda x: (-x["count"], (x["name"] or "").lower()))
+    cap = max(1, int(limit or 30))
     if tags_list:
-        return tags_list[: max(1, int(limit or 30))]
+        return tags_list[:cap]
 
     # Fallback: no tag data yet, use categories as tag-like pills.
     category_rows = _fetch_all(
@@ -212,7 +215,11 @@ def build_tag_cloud(limit=30):
         )
     fallback = [x for x in fallback if x.get("name")]
     fallback.sort(key=lambda x: (-x["count"], (x["name"] or "").lower()))
-    return fallback[: max(1, int(limit or 30))]
+    return fallback[:cap]
+
+
+def build_tag_cloud(limit=30):
+    return _build_tag_cloud_items(limit)
 
 
 def build_category_tree(depth=4):
@@ -334,8 +341,28 @@ def _fetch_plausible(site_id):
 
 
 def build_site_stats(profile_attrs):
-    p = _fetch_json("/api/articles", {"pagination[page]": 1, "pagination[pageSize]": 1})
-    total_posts = int(((p.get("meta") or {}).get("pagination") or {}).get("total", 0))
+    # Fetch posts count
+    total_posts = 0
+    try:
+        p = _fetch_json("/api/articles", {"pagination[page]": 1, "pagination[pageSize]": 1})
+        total_posts = int(((p.get("meta") or {}).get("pagination") or {}).get("total", 0))
+    except Exception:
+        pass
+
+    # Fetch categories count
+    total_categories = 0
+    try:
+        c = _fetch_json("/api/categories", {"pagination[page]": 1, "pagination[pageSize]": 1})
+        total_categories = int(((c.get("meta") or {}).get("pagination") or {}).get("total", 0))
+    except Exception:
+        pass
+
+    # Tag stat = number of pills the tag-cloud widget would list (article tags, or category fallback)
+    total_tags = 0
+    try:
+        total_tags = len(_build_tag_cloud_items(500))
+    except Exception:
+        pass
 
     timezone_name = (profile_attrs.get("siteTimezone") or "Asia/Taipei").strip() or "Asia/Taipei"
     tz = ZoneInfo(timezone_name)
@@ -352,6 +379,8 @@ def build_site_stats(profile_attrs):
     plausible = _fetch_plausible(site_id)
     return {
         "posts": total_posts,
+        "categories": total_categories,
+        "tags": total_tags,
         "runningDays": running_days,
         "visitors": plausible.get("visitors"),
         "visits": plausible.get("visits"),

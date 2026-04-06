@@ -10,7 +10,7 @@ const matter = require('gray-matter');
 const slugify = require('slugify');
 const { createCoreController } = require('@strapi/strapi').factories;
 const {
-  classifyCategoryWithOpenAI,
+  classifyWithOpenAI,
   safeFmSummary,
 } = require('../utils/openai-category');
 const { getStartLimitFromSanitized } = require('../../../utils/owner-scoped-rest');
@@ -459,6 +459,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       const categoryMode = (body.categoryMode || 'ai').toString().trim().toLowerCase() === 'manual' ? 'manual' : 'ai';
       const manualCategoryInput = pickFirstString(body.manualCategory, body.category, body.categoryName);
       const categoryCache = new Map();
+      const tagCache = new Map(); // slug → { id, name, slug }
 
       let relativePaths = [];
       if (Array.isArray(body.relativePaths)) {
@@ -493,6 +494,13 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
         fields: ['id', 'name', 'slug'],
         sort: { id: 'asc' },
         limit: 1000,
+      });
+
+      const existingTagPool = await strapi.entityService.findMany('api::tag.tag', {
+        filters: { owner: { id: importOwnerId } },
+        fields: ['id', 'name', 'slug'],
+        sort: { id: 'asc' },
+        limit: 2000,
       });
 
       const relativePathQueues = new Map();
@@ -564,21 +572,87 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
         return payload;
       };
 
-      const resolveAiCategoryName = async ({ relPath, title, description, contentSnippet, fm, fmCategoryCandidate }) => {
-        if (fmCategoryCandidate) {
-          return { name: normalizeCategoryName(fmCategoryCandidate), source: 'fm' };
+      /**
+       * 依 tag 名稱找到或建立 tag，回傳 { id, name, slug }。
+       * 同一 importOwnerId 下，同名 tag 只建一次（tagCache 避免重複 DB 請求）。
+       */
+      const findOrCreateTag = async (tagName) => {
+        const resolvedName = (tagName || '').toString().trim();
+        if (!resolvedName) return null;
+        const tagSlug = normalizeSlug(resolvedName, resolvedName);
+        const cacheKey = `${importOwnerId}:${tagSlug}`;
+        if (tagCache.has(cacheKey)) return tagCache.get(cacheKey);
+
+        const existingTags = await strapi.entityService.findMany('api::tag.tag', {
+          filters: {
+            $and: [
+              { owner: { id: importOwnerId } },
+              { $or: [{ slug: { $eqi: tagSlug } }, { name: { $eqi: resolvedName } }] },
+            ],
+          },
+          limit: 1,
+        });
+        let tagEntity = existingTags?.[0] || null;
+
+        if (!tagEntity) {
+          const baseData = {
+            name: resolvedName,
+            slug: tagSlug,
+            owner: ownerRelation,
+            publishedAt: new Date().toISOString(),
+          };
+          try {
+            tagEntity = await strapi.entityService.create('api::tag.tag', { data: baseData });
+          } catch (e) {
+            const msg = `${e.message || ''} ${e.name || ''}`.toLowerCase();
+            const isUnique =
+              msg.includes('unique') ||
+              msg.includes('duplicate') ||
+              msg.includes('validation') ||
+              msg.includes('slug');
+            if (!isUnique) throw e;
+            const suffix = `-u${importOwnerId}`;
+            const maxLen = 255;
+            const trimmedBase = tagSlug.slice(0, Math.max(1, maxLen - suffix.length));
+            tagEntity = await strapi.entityService.create('api::tag.tag', {
+              data: { ...baseData, slug: `${trimmedBase}${suffix}` },
+            });
+          }
         }
 
+        const result = {
+          id: tagEntity.id,
+          name: tagEntity.name || resolvedName,
+          slug: tagEntity.slug || tagSlug,
+        };
+        tagCache.set(cacheKey, result);
+        return result;
+      };
+
+      /**
+       * 呼叫 OpenAI，一次取得 category + description + tags。
+       * 若 frontmatter 已有分類，仍讓 AI 產生 description 與 tags；
+       * 分類則直接沿用 frontmatter（省去 category 的 token 消耗）。
+       */
+      const resolveAiMetadata = async ({ relPath, title, description, contentSnippet, fm, fmCategoryCandidate }) => {
         const apiKey = process.env.OPENAI_API_KEY;
         const model = process.env.OPENAI_MODEL;
 
         if (!apiKey) {
-          const fallback = pickMeaningfulSegment(relPath) || '未分類';
-          return { name: fallback, source: 'fallback-no-key', detail: 'OPENAI_API_KEY missing' };
+          const catFallback = fmCategoryCandidate
+            ? normalizeCategoryName(fmCategoryCandidate)
+            : pickMeaningfulSegment(relPath) || '未分類';
+          return {
+            category: catFallback,
+            description: '',
+            tags: [],
+            source: 'fallback-no-key',
+            detail: 'OPENAI_API_KEY missing',
+          };
         }
 
         try {
-          const name = await classifyCategoryWithOpenAI({
+          const result = await classifyWithOpenAI({
             apiKey,
             model,
             title,
@@ -586,13 +660,26 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
             description,
             contentSnippet,
             fmSummary: safeFmSummary(fm),
-            existingCategories: existingCategoryPool,
+            existingCategories: fmCategoryCandidate ? [] : existingCategoryPool,
+            existingTags: existingTagPool,
           });
-          return { name: normalizeCategoryName(name) || '未分類', source: 'openai' };
-        } catch (e) {
-          const fallback = pickMeaningfulSegment(relPath) || '未分類';
+          // 若 frontmatter 已明確指定分類，優先沿用
           return {
-            name: fallback,
+            category: fmCategoryCandidate
+              ? normalizeCategoryName(fmCategoryCandidate)
+              : normalizeCategoryName(result.category) || '未分類',
+            description: result.description || '',
+            tags: result.tags || [],
+            source: fmCategoryCandidate ? 'fm+openai' : 'openai',
+          };
+        } catch (e) {
+          const catFallback = fmCategoryCandidate
+            ? normalizeCategoryName(fmCategoryCandidate)
+            : pickMeaningfulSegment(relPath) || '未分類';
+          return {
+            category: catFallback,
+            description: '',
+            tags: [],
             source: 'fallback-error',
             detail: e.message || 'openai error',
           };
@@ -631,34 +718,82 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
           const slugSource = pickFirstString(fm.slug, fm.permalink, title, fileBase);
           const slug = normalizeSlug(slugSource, fileBase || 'note');
           if (!pickFirstString(fm.slug, fm.permalink)) normalizeNotes.push('slug:normalized');
-          const description = pickFirstString(fm.description, fm.desc, fm.summary, getFallbackDescription(content), title);
-          if (!pickFirstString(fm.description, fm.desc, fm.summary)) normalizeNotes.push('description:auto-filled');
-          if (!content) normalizeNotes.push('content:auto-filled');
+
+          // description 先從 frontmatter 取（若有意義的話），僅供 AI 參考
+          const fmDescription = pickFirstString(fm.description, fm.desc, fm.summary);
+          const roughDescription = fmDescription || getFallbackDescription(content) || title;
 
           const fmCategoryCandidate = parseCategoryCandidate(fm.category, fm.categories);
-          const aiResult = await resolveAiCategoryName({
+
+          // ── AI 自動產生 category + description + tags ──────────────────
+          const aiMeta = await resolveAiMetadata({
             relPath,
             title,
-            description,
+            description: roughDescription,
             contentSnippet: safeContent.slice(0, 6000),
             fm,
             fmCategoryCandidate,
           });
-          const categoryName = categoryMode === 'manual' ? manualCategoryInput || '未分類' : aiResult.name;
+
+          // 決定最終分類
+          let categoryName;
           if (categoryMode === 'manual') {
+            categoryName = manualCategoryInput || '未分類';
             normalizeNotes.push('category:manual');
-          } else if (fmCategoryCandidate) {
-            normalizeNotes.push('category:fm');
-          } else if (aiResult.source === 'openai') {
-            normalizeNotes.push('category:openai');
-          } else if (aiResult.source === 'fallback-no-key') {
-            normalizeNotes.push('category:openai-missing-key');
-            if (aiResult.detail) normalizeNotes.push(aiResult.detail);
           } else {
-            normalizeNotes.push('category:openai-fallback');
-            if (aiResult.detail) normalizeNotes.push(aiResult.detail);
+            categoryName = aiMeta.category || '未分類';
+            if (aiMeta.source === 'fm+openai' || aiMeta.source === 'fm') {
+              normalizeNotes.push('category:fm');
+            } else if (aiMeta.source === 'openai') {
+              normalizeNotes.push('category:openai');
+            } else if (aiMeta.source === 'fallback-no-key') {
+              normalizeNotes.push('category:openai-missing-key');
+              if (aiMeta.detail) normalizeNotes.push(aiMeta.detail);
+            } else {
+              normalizeNotes.push('category:openai-fallback');
+              if (aiMeta.detail) normalizeNotes.push(aiMeta.detail);
+            }
           }
+
+          // 決定最終摘要（AI 優先，無 AI 才退回原始 frontmatter / 內文前幾行）
+          const finalDescription = aiMeta.description || roughDescription;
+          if (aiMeta.source === 'openai' || aiMeta.source === 'fm+openai') {
+            normalizeNotes.push('description:openai');
+          } else if (!fmDescription) {
+            normalizeNotes.push('description:auto-filled');
+          }
+
+          if (!content) normalizeNotes.push('content:auto-filled');
+
           const categoryEntity = await findOrCreateCategory(categoryName);
+
+          // 決定最終標籤（手動模式也做 AI 標籤；frontmatter tags 優先追加）
+          let finalTagNames = [];
+          const fmTags = [];
+          if (Array.isArray(fm.tags)) fmTags.push(...fm.tags.map((t) => String(t || '').trim()).filter(Boolean));
+          else if (typeof fm.tags === 'string') fmTags.push(...fm.tags.split(',').map((t) => t.trim()).filter(Boolean));
+          if (Array.isArray(fm.tag)) fmTags.push(...fm.tag.map((t) => String(t || '').trim()).filter(Boolean));
+
+          if (fmTags.length) {
+            // frontmatter 有 tags → 沿用，不超過 5 個
+            finalTagNames = [...new Set(fmTags)].slice(0, 5);
+            normalizeNotes.push('tags:fm');
+          } else if (aiMeta.tags && aiMeta.tags.length) {
+            finalTagNames = aiMeta.tags.slice(0, 5);
+            normalizeNotes.push('tags:openai');
+          } else {
+            normalizeNotes.push('tags:none');
+          }
+
+          const tagEntities = [];
+          for (const tagName of finalTagNames) {
+            try {
+              const t = await findOrCreateTag(tagName);
+              if (t) tagEntities.push(t);
+            } catch (e) {
+              strapi.log.warn(`[importMarkdown] tag "${tagName}" 建立失敗：${e.message}`);
+            }
+          }
 
           const existingArticles = await strapi.entityService.findMany('api::article.article', {
             filters: { slug, owner: { id: importOwnerId } },
@@ -668,12 +803,13 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
           const payload = {
             title,
             slug,
-            description,
+            description: finalDescription,
             content: safeContent,
             publishedAt: new Date().toISOString(),
             owner: ownerRelation,
           };
           if (categoryEntity?.id) payload.category = categoryEntity.id;
+          if (tagEntities.length) payload.tags = tagEntities.map((t) => t.id);
 
           if (existingArticles?.length) {
             const updated = await strapi.entityService.update('api::article.article', existingArticles[0].id, {
@@ -686,6 +822,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
               id: updated.id,
               slug,
               category: categoryEntity?.name || '-',
+              tags: tagEntities.map((t) => t.name),
               categoryMode,
               normalized: normalizeNotes,
               message: normalizeNotes.length ? `updated by slug (${normalizeNotes.join(', ')})` : 'updated by slug',
@@ -699,6 +836,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
               id: created.id,
               slug,
               category: categoryEntity?.name || '-',
+              tags: tagEntities.map((t) => t.name),
               categoryMode,
               normalized: normalizeNotes,
               message: normalizeNotes.length ? `created (${normalizeNotes.join(', ')})` : 'created',

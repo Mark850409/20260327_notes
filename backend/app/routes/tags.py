@@ -12,6 +12,21 @@ _tag = Tag(name="Tags", description="Tag management")
 STRAPI = os.getenv("STRAPI_URL", "http://strapi:1337")
 
 
+def _flatten(item: dict) -> dict:
+    """Handle Strapi v4 {id, attributes} or v5 flat style."""
+    if not isinstance(item, dict):
+        return {}
+    attrs = item.get("attributes")
+    if isinstance(attrs, dict):
+        out = dict(attrs)
+        if item.get("id") is not None:
+            out["id"] = item["id"]
+        if item.get("documentId") is not None:
+            out["documentId"] = item["documentId"]
+        return out
+    return item
+
+
 @tags_bp.get("/tags", tags=[_tag], summary="List all tags")
 def list_tags():
     try:
@@ -28,8 +43,15 @@ def list_tags():
     except Exception as e:
         return jsonify({"data": [], "meta": {"error": str(e)}}), 200
 
-    result = [
-        {"id": t.get("id"), "name": t.get("name"), "slug": t.get("slug"), "document_id": t.get("documentId")}
-        for t in items
-    ]
+    result = []
+    for t in items:
+        flat = _flatten(t)
+        result.append(
+            {
+                "id": flat.get("id"),
+                "name": flat.get("name"),
+                "slug": flat.get("slug"),
+                "document_id": flat.get("documentId"),
+            }
+        )
     return jsonify({"data": result})

@@ -224,5 +224,39 @@ module.exports = {
         }
       },
     });
+    
+    /**
+     * 自動修正：檢查無擁有者的分類與標籤，並將其指派給預設擁有者。
+     * 解決前台因為 owner-scoping 而看不到標籤的問題。
+     */
+    process.nextTick(async () => {
+      try {
+        const def = process.env.STRAPI_DEFAULT_ARTICLE_OWNER_ID;
+        if (!def) return;
+        const ownerId = parseInt(String(def).trim(), 10);
+        if (Number.isNaN(ownerId) || ownerId <= 0) return;
+
+        const ownerVal = await buildOwnerRelationValue(strapi, ownerId);
+
+        for (const uid of ['api::category.category', 'api::tag.tag']) {
+          const orphans = await strapi.documents(uid).findMany({
+            filters: { owner: { $null: true } },
+            fields: ['documentId'],
+            limit: 1000,
+          });
+          if (orphans.length > 0) {
+            strapi.log.info(`[bootstrap] Found ${orphans.length} orphan ${uid.split('.')[1]}(s), assigning to owner ${ownerId}`);
+            for (const item of orphans) {
+              await strapi.documents(uid).update({
+                documentId: item.documentId,
+                data: { owner: ownerVal },
+              });
+            }
+          }
+        }
+      } catch (e) {
+        strapi.log.error(`[bootstrap] cleanup orphans: ${e.message}`);
+      }
+    });
   },
 };

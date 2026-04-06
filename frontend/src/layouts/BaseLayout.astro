@@ -28,11 +28,10 @@ let recentArticles: any[] = [];
 let stats = { posts: 0, categories: 0, tags: 0 };
 
 try {
-  const [profRes, artMetaRes, catRes, tagRes, recentRes] = await Promise.all([
+  const [profRes, statsRes, catRes, recentRes] = await Promise.all([
     fetch(`${apiBase}/api/site-profile`, beInit),
-    fetch(`${apiBase}/api/articles?page=1&limit=1`, beInit),
+    fetch(`${apiBase}/api/widgets/site-stats`, beInit),
     fetch(`${apiBase}/api/categories`, beInit),
-    fetch(`${apiBase}/api/tags`, beInit),
     fetch(`${apiBase}/api/articles?page=1&limit=5`, beInit),
   ]);
 
@@ -40,18 +39,18 @@ try {
     const j = await profRes.json();
     siteProfile = j.data || {};
   }
-  if (artMetaRes.ok) {
-    const j = await artMetaRes.json();
-    stats.posts = j.meta?.total ?? 0;
+  if (statsRes.ok) {
+    const j = await statsRes.json();
+    const data = j.data || {};
+    stats.posts = data.posts || 0;
+    stats.categories = data.categories || 0;
+    stats.tags = data.tags || 0;
   }
   if (catRes.ok) {
     const j = await catRes.json();
     categories = j.data || [];
-    stats.categories = categories.length;
-  }
-  if (tagRes.ok) {
-    const j = await tagRes.json();
-    stats.tags = (j.data || []).length;
+    // 如果 site-stats 失敗，回退使用 categories.length
+    if (!stats.categories) stats.categories = categories.length;
   }
   if (recentRes.ok) {
     const j = await recentRes.json();

@@ -4,7 +4,8 @@
   "info": {
     "singularName": "article",
     "pluralName": "articles",
-    "displayName": "Article "
+    "displayName": "Article",
+    "mainField": "title"
   },
   "options": {
     "draftAndPublish": true
@@ -15,7 +16,8 @@
       "type": "string"
     },
     "slug": {
-      "type": "string"
+      "type": "uid",
+      "targetField": "title"
     },
     "content": {
       "type": "richtext"
