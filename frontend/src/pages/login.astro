@@ -53,7 +53,14 @@ const reason = Astro.url.searchParams.get('reason') || '';
         {
           reason === 'session' && (
             <p class="mt-5 rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/25 dark:bg-amber-950/35 dark:text-amber-100">
-              工作階段已失效或未授權，請重新登入。
+              登入憑證已失效（常見為 Strapi JWT 已過期）。正在清除舊的 Cookie…
+            </p>
+          )
+        }
+        {
+          reason === 'cleared' && (
+            <p class="mt-5 rounded-xl border border-emerald-200/80 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-500/25 dark:bg-emerald-950/35 dark:text-emerald-100">
+              已清除舊的登入狀態，請重新輸入帳號密碼登入。
             </p>
           )
         }
@@ -145,7 +152,17 @@ const reason = Astro.url.searchParams.get('reason') || '';
       }
     </style>
 
-    <script is:inline define:vars={{ next }}>
+    <script is:inline define:vars={{ next, reason }}>
+      (async function sessionCleanup() {
+        if (reason !== 'session') return;
+        try {
+          await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        } catch {
+          /* ignore */
+        }
+        location.replace('/login?reason=cleared');
+      })();
+
       const form = document.getElementById('login-form');
       const errEl = document.getElementById('login-error');
       form?.addEventListener('submit', async (e) => {

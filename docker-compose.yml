@@ -55,6 +55,8 @@ services:
       STRAPI_ADMIN_DISABLE_HMR: ${STRAPI_ADMIN_DISABLE_HMR:-}
       # Vite 6+ Host 檢查：經 NAS DDNS 請設白名單或留空（見 .env.example）
       STRAPI_ADMIN_ALLOWED_HOSTS: ${STRAPI_ADMIN_ALLOWED_HOSTS:-}
+      # users-permissions JWT 效期（例 90d、365d）；見 strapi/config/plugins.js
+      STRAPI_USERS_JWT_EXPIRES_IN: ${STRAPI_USERS_JWT_EXPIRES_IN:-90d}
     volumes:
       - strapi_uploads:/opt/app/public/uploads
       - ./strapi/src:/opt/app/src              # ← persist Content Types schema
