@@ -188,6 +188,26 @@ const reason = Astro.url.searchParams.get('reason') || '';
             errEl.classList.remove('hidden');
             return;
           }
+          // 與首頁 SSR 相同條件：若此處 401，下一頁也會被導回 ?reason=session → 閃一下到 ?reason=cleared
+          const listQs = new URLSearchParams({
+            page: '1',
+            limit: '1',
+            sort: 'title',
+            order: 'asc',
+          });
+          const [rProf, rArt, rCat] = await Promise.all([
+            fetch('/api/site-profile', { credentials: 'include' }),
+            fetch(`/api/articles?${listQs.toString()}`, { credentials: 'include' }),
+            fetch('/api/categories', { credentials: 'include' }),
+          ]);
+          if (!rProf.ok || !rArt.ok || !rCat.ok) {
+            const unauthorized = [rProf.status, rArt.status, rCat.status].some((s) => s === 401 || s === 403);
+            errEl.textContent = unauthorized
+              ? '帳密已通過，但讀取筆記仍遭拒（401/403）。請到 Strapi 後台：設定 → 使用者與權限 → Authenticated，開啟 site-profile、Article、Category 等 find；並確認 JWT 未過期、HTTPS 反向代理有轉發 X-Forwarded-Proto。'
+              : `登入後驗證失敗（site-profile ${rProf.status}、articles ${rArt.status}、categories ${rCat.status}）。`;
+            errEl.classList.remove('hidden');
+            return;
+          }
           try {
             localStorage.setItem('notes_session', '1');
           } catch {

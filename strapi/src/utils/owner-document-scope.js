@@ -20,6 +20,55 @@ async function buildOwnerRelationValue(strapi, numericUserId) {
   return id;
 }
 
+/**
+ * manyToOne（category 等）：Strapi 5 需以 documentId 做 connect，僅傳數字 id 常無法寫入關聯。
+ */
+async function buildDocumentRelationConnect(strapi, uid, numericId) {
+  const id = parseInt(String(numericId), 10);
+  if (Number.isNaN(id) || id < 1) return undefined;
+  try {
+    const row = await strapi.db.query(uid).findOne({
+      where: { id },
+      select: ['id', 'documentId'],
+    });
+    if (row?.documentId) {
+      return { connect: [row.documentId] };
+    }
+    strapi.log.warn(`[buildDocumentRelationConnect] ${uid} id=${id} has no documentId`);
+  } catch (e) {
+    strapi.log.warn(`[buildDocumentRelationConnect] ${uid} ${e.message}`);
+  }
+  return undefined;
+}
+
+/**
+ * manyToMany（tags 等）：批次匯入時以 set 覆寫整組關聯。
+ */
+async function buildDocumentRelationSetMany(strapi, uid, numericIds) {
+  const ids = [
+    ...new Set(
+      numericIds
+        .map((x) => parseInt(String(x), 10))
+        .filter((n) => !Number.isNaN(n) && n > 0),
+    ),
+  ];
+  if (!ids.length) return undefined;
+  try {
+    const rows = await strapi.db.query(uid).findMany({
+      where: { id: { $in: ids } },
+      select: ['id', 'documentId'],
+    });
+    const docIds = rows.map((r) => r.documentId).filter(Boolean);
+    if (docIds.length) {
+      return { set: docIds };
+    }
+    strapi.log.warn(`[buildDocumentRelationSetMany] ${uid} no documentIds for ids=${ids.join(',')}`);
+  } catch (e) {
+    strapi.log.warn(`[buildDocumentRelationSetMany] ${uid} ${e.message}`);
+  }
+  return undefined;
+}
+
 function isStrapiSuperAdmin(user) {
   if (!user) return false;
   if (user.isSuperAdmin === true) return true;
@@ -76,6 +125,8 @@ async function resolveOwnerDocumentScope(strapi) {
 
 module.exports = {
   buildOwnerRelationValue,
+  buildDocumentRelationConnect,
+  buildDocumentRelationSetMany,
   isStrapiSuperAdmin,
   mergeNoRowsFilters,
   resolveOwnerDocumentScope,

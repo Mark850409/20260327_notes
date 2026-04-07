@@ -7,24 +7,26 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const matter = require('gray-matter');
-const slugify = require('slugify');
 const { createCoreController } = require('@strapi/strapi').factories;
 const {
   classifyWithOpenAI,
   safeFmSummary,
 } = require('../utils/openai-category');
 const { getStartLimitFromSanitized } = require('../../../utils/owner-scoped-rest');
-const { buildOwnerRelationValue } = require('../../../utils/owner-document-scope');
-
-function toStableHash(input) {
-  const str = (input || '').toString();
-  let hash = 2166136261;
-  for (let i = 0; i < str.length; i += 1) {
-    hash ^= str.charCodeAt(i);
-    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-  }
-  return (hash >>> 0).toString(36);
-}
+const {
+  buildOwnerRelationValue,
+  buildDocumentRelationConnect,
+  buildDocumentRelationSetMany,
+} = require('../../../utils/owner-document-scope');
+const {
+  replaceLocalImagesWithMinioUrls,
+  normalizeRelPath,
+  isImageExt,
+  isMinioEnabled,
+  normalizeNestedObjectPrefix,
+  uploadBufferToMinioObject,
+} = require('../../../utils/minio-import');
+const { normalizeSlug } = require('../../../utils/article-slug');
 
 function pickFirstString(...values) {
   for (const value of values) {
@@ -35,27 +37,6 @@ function pickFirstString(...values) {
     }
   }
   return '';
-}
-
-function normalizeSlug(input, fallback = 'note') {
-  const base = (input || '').toString().trim() || fallback;
-  const strictSlug = slugify(base, {
-    lower: true,
-    strict: true,
-    trim: true,
-  });
-  if (strictSlug) return strictSlug;
-  const relaxedSlug = slugify(base, {
-    lower: true,
-    strict: false,
-    trim: true,
-  })
-    .replace(/\s+/g, '-')
-    .replace(/[\\/]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  if (relaxedSlug) return relaxedSlug;
-  return `note-${toStableHash(base)}`;
 }
 
 function getFallbackDescription(content) {
@@ -452,6 +433,69 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
     }
   },
 
+  async uploadPasteMinio(ctx) {
+    try {
+      if (!isMinioEnabled()) {
+        return ctx.badRequest(
+          'MinIO 未設定：請設定 MINIO_ENDPOINT、MINIO_BUCKET、MINIO_ACCESS_KEY、MINIO_SECRET_KEY、MINIO_PUBLIC_URL 等環境變數。',
+        );
+      }
+
+      const files = normalizeFiles(ctx.request.files?.files || ctx.request.files);
+      const file = files[0];
+      if (!file) return ctx.badRequest('No image file uploaded.');
+
+      const mime = await inferImageMimeType(file);
+      if (!mime || !mime.startsWith('image/')) {
+        return ctx.badRequest('Only image files are supported.');
+      }
+      file.type = mime;
+      file.mimetype = mime;
+
+      const body = ctx.request.body || {};
+      const rawFileName = pickFirstString(body.fileName, body.filename);
+      const prefix = normalizeNestedObjectPrefix(
+        pickFirstString(body.objectPathPrefix, body.minioPathPrefix, body.folderPath),
+      );
+
+      const displayName = ensureImageExtension(
+        rawFileName || file.originalFilename || file.name,
+        mime,
+      );
+      const safeName = path.basename(String(displayName).replace(/\\/g, '/'));
+      const objectKey = prefix ? `${prefix}/${safeName}` : safeName;
+
+      let buffer;
+      if (Buffer.isBuffer(file.buffer) && file.buffer.length) {
+        buffer = file.buffer;
+      } else {
+        const filePath = file.filepath || file.path;
+        if (filePath) {
+          buffer = await fs.readFile(filePath);
+        } else {
+          return ctx.badRequest('無法讀取上傳檔案內容。');
+        }
+      }
+
+      const url = await uploadBufferToMinioObject({
+        buffer,
+        contentType: mime,
+        objectKey,
+      });
+
+      const altBase =
+        path.basename(safeName, path.extname(safeName)) || 'pasted-image';
+
+      ctx.body = {
+        url,
+        name: altBase,
+        objectKey,
+      };
+    } catch (e) {
+      ctx.throw(500, e.message || 'MinIO paste upload failed');
+    }
+  },
+
   async importMarkdown(ctx) {
     try {
       const files = normalizeFiles(ctx.request.files?.files || ctx.request.files);
@@ -503,16 +547,31 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
         limit: 2000,
       });
 
-      const relativePathQueues = new Map();
+      const basenameQueues = new Map();
       for (const p of relativePaths) {
         const key = path.basename(String(p || '')).toLowerCase();
         if (!key) continue;
-        if (!relativePathQueues.has(key)) relativePathQueues.set(key, []);
-        relativePathQueues.get(key).push(String(p));
+        if (!basenameQueues.has(key)) basenameQueues.set(key, []);
+        basenameQueues.get(key).push(String(p));
+      }
+
+      const resolvedRelPaths = [];
+      for (let fi = 0; fi < files.length; fi += 1) {
+        const f = files[fi];
+        const fn = f.originalFilename || f.name || `file-${fi}`;
+        const fk = fn.toLowerCase();
+        const q = basenameQueues.get(fk);
+        const rp = (q && q.length ? q.shift() : null) || relativePaths[fi] || f.webkitRelativePath || fn;
+        resolvedRelPaths.push(rp);
+      }
+
+      const allFilesByPath = new Map();
+      for (let fi = 0; fi < files.length; fi += 1) {
+        allFilesByPath.set(normalizeRelPath(resolvedRelPaths[fi]), files[fi]);
       }
 
       const results = [];
-      const summary = { created: 0, updated: 0, failed: 0, skipped: 0 };
+      const summary = { created: 0, updated: 0, failed: 0, skipped: 0, minioImagesUploaded: 0 };
 
       const findOrCreateCategory = async (inputName) => {
         const resolvedName = pickFirstString(inputName) || '未分類';
@@ -688,13 +747,14 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
 
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
-        const fileName = file.originalFilename || file.name || `file-${i}.md`;
-        const fileKey = fileName.toLowerCase();
-        const queued = relativePathQueues.get(fileKey);
-        const relPath = (queued && queued.length ? queued.shift() : null) || relativePaths[i] || file.webkitRelativePath || fileName;
+        const fileName = file.originalFilename || file.name || `file-${i}`;
+        const relPath = resolvedRelPaths[i];
         const ext = path.extname(fileName).toLowerCase();
 
         if (ext !== '.md') {
+          if (isImageExt(ext)) {
+            continue;
+          }
           summary.skipped += 1;
           results.push({
             path: relPath,
@@ -767,6 +827,18 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
 
           const categoryEntity = await findOrCreateCategory(categoryName);
 
+          const minioOutcome = await replaceLocalImagesWithMinioUrls({
+            content: safeContent,
+            mdRelPath: relPath,
+            categoryName: categoryEntity?.name || categoryName,
+            noteTitle: title,
+            pathToFile: allFilesByPath,
+          });
+          const finalContent = minioOutcome.content;
+          if (minioOutcome.replaced > 0) {
+            summary.minioImagesUploaded += minioOutcome.replaced;
+          }
+
           // 決定最終標籤（手動模式也做 AI 標籤；frontmatter tags 優先追加）
           let finalTagNames = [];
           const fmTags = [];
@@ -804,12 +876,22 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
             title,
             slug,
             description: finalDescription,
-            content: safeContent,
+            content: finalContent,
             publishedAt: new Date().toISOString(),
             owner: ownerRelation,
           };
-          if (categoryEntity?.id) payload.category = categoryEntity.id;
-          if (tagEntities.length) payload.tags = tagEntities.map((t) => t.id);
+          if (categoryEntity?.id) {
+            const catRel = await buildDocumentRelationConnect(strapi, 'api::category.category', categoryEntity.id);
+            if (catRel !== undefined) payload.category = catRel;
+          }
+          if (tagEntities.length) {
+            const tagRel = await buildDocumentRelationSetMany(
+              strapi,
+              'api::tag.tag',
+              tagEntities.map((t) => t.id),
+            );
+            if (tagRel !== undefined) payload.tags = tagRel;
+          }
 
           if (existingArticles?.length) {
             const updated = await strapi.entityService.update('api::article.article', existingArticles[0].id, {
@@ -825,6 +907,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
               tags: tagEntities.map((t) => t.name),
               categoryMode,
               normalized: normalizeNotes,
+              minioImages: minioOutcome.replaced,
               message: normalizeNotes.length ? `updated by slug (${normalizeNotes.join(', ')})` : 'updated by slug',
             });
           } else {
@@ -839,6 +922,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
               tags: tagEntities.map((t) => t.name),
               categoryMode,
               normalized: normalizeNotes,
+              minioImages: minioOutcome.replaced,
               message: normalizeNotes.length ? `created (${normalizeNotes.join(', ')})` : 'created',
             });
           }

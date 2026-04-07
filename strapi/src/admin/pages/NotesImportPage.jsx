@@ -45,6 +45,40 @@ function mapCmUserRow(row) {
   return { value: String(id), label };
 }
 
+/** 與 Strapi Admin 暗色主題一致之內嵌樣式 */
+const D = {
+  text: '#f6f6f9',
+  muted: '#a5a5ba',
+  border: '#4a4a5c',
+  bgElevated: '#32324d',
+  bgPanel: '#2a2a33',
+  bgInput: '#2a2a36',
+  bgTableHead: '#2a2a38',
+  rowBorder: '#3a3a4c',
+  codeBg: '#181825',
+  codeColor: '#d0d0ff',
+  danger: '#ee5e52',
+  progressTrack: '#3a3a4c',
+  progressFill: '#4945ff',
+  btnPrimary: '#4945ff',
+  btnPrimaryDisabled: '#2a2a40',
+  btnSecondaryBg: '#32324d',
+  btnSecondaryBorder: '#4a4a5c',
+  empty: '#8888a0',
+  tagBg: 'rgba(105, 105, 255, 0.15)',
+  tagBorder: 'rgba(136, 136, 255, 0.35)',
+  tagText: '#c0c0ff',
+};
+
+const codeInline = {
+  background: D.codeBg,
+  color: D.codeColor,
+  padding: '2px 6px',
+  borderRadius: 4,
+  fontSize: 12,
+  border: `1px solid ${D.border}`,
+};
+
 export default function NotesImportPage() {
   const filesInputRef = useRef(null);
   const dirInputRef = useRef(null);
@@ -128,11 +162,19 @@ export default function NotesImportPage() {
    * @param {FileList|null|undefined} fileList
    * @param {{ fromDirectory?: boolean }} [opts] 資料夾模式：每次選取加時間前綴，避免多個資料夾內相同相對路徑互蓋；可重複按鈕累加多個資料夾。
    */
+  const imageExt = (name) => {
+    const n = (name || '').toLowerCase();
+    return ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'].some((e) => n.endsWith(e));
+  };
+
   function addFiles(fileList, opts = {}) {
     const { fromDirectory = false } = opts;
     const batchPrefix = fromDirectory ? `pick-${Date.now()}` : null;
     const incoming = Array.from(fileList || [])
-      .filter((f) => f?.name?.toLowerCase()?.endsWith('.md'))
+      .filter((f) => {
+        const n = f?.name?.toLowerCase() || '';
+        return n.endsWith('.md') || imageExt(n);
+      })
       .map((f) => {
         const rel = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
         const path = batchPrefix ? `${batchPrefix}/${rel}` : rel;
@@ -214,27 +256,33 @@ export default function NotesImportPage() {
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 1100 }}>
-      <h1 style={{ fontSize: 28, marginBottom: 6 }}>批次匯入筆記（Markdown）</h1>
-      <p style={{ color: '#666', marginBottom: 14 }}>
-        支援多檔與<strong>多個資料夾</strong>：可重複按「選擇資料夾」累加；若瀏覽器支援，同一對話框內可複選多個資料夾（Chrome／Edge 較常見）。資料夾會遞迴包含 .md；frontmatter 優先，缺值才使用檔名/路徑補值。
+    <main style={{ padding: 24, maxWidth: 1100, color: D.text }}>
+      <h1 style={{ fontSize: 28, marginBottom: 6, color: D.text }}>批次匯入筆記（Markdown）</h1>
+      <p style={{ color: D.muted, marginBottom: 14 }}>
+        支援多檔與<strong>多個資料夾</strong>：可重複按「選擇資料夾」累加；若瀏覽器支援，同一對話框內可複選多個資料夾（Chrome／Edge 較常見）。資料夾會遞迴包含 .md 與常見圖片（png／jpg／webp 等）；frontmatter 優先，缺值才使用檔名/路徑補值。
       </p>
-      <p style={{ color: '#666', marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
+      <p style={{ color: D.muted, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
+        <b>圖片與 MinIO</b>：若後端已設定 <code style={codeInline}>MINIO_*</code> 環境變數，匯入時會將內文 <code style={codeInline}>![](相對路徑)</code>、一般 <code style={codeInline}>![](https://…)</code>（含 BookStack 的{' '}
+        <code style={codeInline}>[![](內層)](外層)</code>）之圖片下載或讀檔後上傳至 MinIO（路徑{' '}
+        <code style={codeInline}>分類/筆記名稱/timestamp_筆記名稱_流水號.副檔名</code>），並替換為公開 URL。遠端網址會先依{' '}
+        <code style={codeInline}>MINIO_REMOTE_SRC_URL_PREFIX</code> → <code style={codeInline}>MINIO_REMOTE_DST_URL_PREFIX</code> 換網域再下載（預設：舊 QNAP 埠 → bookstack.zanehsu.site）。相對路徑圖請與 .md 一併選入同資料夾。
+      </p>
+      <p style={{ color: D.muted, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         <b>AI 自動生成</b>：匯入時會呼叫 OpenAI（需設定{' '}
-        <code>OPENAI_API_KEY</code>）自動產生<strong>摘要</strong>（description）、<strong>分類</strong>（最多 1 個）與<strong>標籤</strong>（最多 5 個）。
-        若 frontmatter 已含 <code>tags</code>，將優先沿用；未設定 API Key 時分類退回路徑推斷，摘要退回內文首行。
+        <code style={codeInline}>OPENAI_API_KEY</code>）自動產生<strong>摘要</strong>（description）、<strong>分類</strong>（最多 1 個）與<strong>標籤</strong>（最多 5 個）。
+        若 frontmatter 已含 <code style={codeInline}>tags</code>，將優先沿用；未設定 API Key 時分類退回路徑推斷，摘要退回內文首行。
       </p>
-      <p style={{ color: '#666', marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
+      <p style={{ color: D.muted, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         <b>API 使用者（擁有者）</b>：匯入的文章與<strong>自動建立的分類</strong>會歸屬該「使用者與權限」帳號。請從下拉選單選擇；選「使用環境變數預設」時改讀{' '}
-        <code>STRAPI_DEFAULT_ARTICLE_OWNER_ID</code>（或 <code>STRAPI_IMPORT_DEFAULT_OWNER_ID</code>），皆無則匯入會失敗。
+        <code style={codeInline}>STRAPI_DEFAULT_ARTICLE_OWNER_ID</code>（或 <code style={codeInline}>STRAPI_IMPORT_DEFAULT_OWNER_ID</code>），皆無則匯入會失敗。
       </p>
-      <p style={{ color: '#666', marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
+      <p style={{ color: D.muted, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         <b>後台清單篩選</b>：內容管理中的文章／分類僅顯示與您<strong>管理員 email 相同</strong>的 API 使用者所擁有之資料（超級管理員除外）。
         請讓「設定 → 管理員」與「使用者與權限 → User」使用同一個 email，或設{' '}
-        <code>STRAPI_CM_OWNER_SCOPE_DISABLED=true</code> 暫時關閉篩選。
+        <code style={codeInline}>STRAPI_CM_OWNER_SCOPE_DISABLED=true</code> 暫時關閉篩選。
       </p>
       <div style={{ marginBottom: 14 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: D.text }}>
           API 使用者（選填，與環境變數擇一）
         </label>
         <select
@@ -245,10 +293,11 @@ export default function NotesImportPage() {
             width: '100%',
             maxWidth: 480,
             padding: '10px 12px',
-            border: '1px solid #dcdce4',
+            border: `1px solid ${D.border}`,
             borderRadius: 8,
             fontSize: 14,
-            background: '#fff',
+            background: D.bgInput,
+            color: D.text,
           }}
         >
           <option value="">使用環境變數預設（STRAPI_DEFAULT_ARTICLE_OWNER_ID）</option>
@@ -258,9 +307,9 @@ export default function NotesImportPage() {
             </option>
           ))}
         </select>
-        {ownerLoading && <p style={{ margin: '6px 0 0', fontSize: 12, color: '#666' }}>載入使用者清單中…</p>}
+        {ownerLoading && <p style={{ margin: '6px 0 0', fontSize: 12, color: D.muted }}>載入使用者清單中…</p>}
         {ownerError && (
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b42318' }}>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: D.danger }}>
             無法載入使用者下拉選單：{ownerError}（仍可依環境變數匯入）
           </p>
         )}
@@ -268,9 +317,9 @@ export default function NotesImportPage() {
 
       <section
         style={{
-          border: '1px solid #e8e8ef',
+          border: `1px solid ${D.border}`,
           borderRadius: 10,
-          background: '#fff',
+          background: D.bgElevated,
           marginBottom: 14,
           padding: 12,
         }}
@@ -279,7 +328,14 @@ export default function NotesImportPage() {
         <button
           type="button"
           onClick={() => filesInputRef.current?.click()}
-          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, cursor: 'pointer', background: '#fff' }}
+          style={{
+            padding: '8px 12px',
+            border: `1px solid ${D.btnSecondaryBorder}`,
+            borderRadius: 8,
+            cursor: 'pointer',
+            background: D.btnSecondaryBg,
+            color: D.text,
+          }}
         >
           選擇 Markdown 檔案
         </button>
@@ -287,7 +343,14 @@ export default function NotesImportPage() {
           type="button"
           onClick={() => dirInputRef.current?.click()}
           title="可多次點選以加入多個資料夾；若系統檔案對話框支援，可一次複選多個資料夾"
-          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, cursor: 'pointer', background: '#fff' }}
+          style={{
+            padding: '8px 12px',
+            border: `1px solid ${D.btnSecondaryBorder}`,
+            borderRadius: 8,
+            cursor: 'pointer',
+            background: D.btnSecondaryBg,
+            color: D.text,
+          }}
         >
           選擇資料夾（可累加／複選）
         </button>
@@ -297,11 +360,12 @@ export default function NotesImportPage() {
           disabled={!items.length || loading}
           style={{
             padding: '8px 12px',
-            border: '1px solid #2456ff',
+            border: `1px solid ${D.btnPrimary}`,
             borderRadius: 8,
             cursor: !items.length || loading ? 'not-allowed' : 'pointer',
-            background: !items.length || loading ? '#f5f5f5' : '#2456ff',
-            color: !items.length || loading ? '#999' : '#fff',
+            background: !items.length || loading ? D.btnPrimaryDisabled : D.btnPrimary,
+            color: '#fff',
+            opacity: !items.length || loading ? 0.65 : 1,
           }}
         >
           {loading ? '匯入中...' : `開始匯入 (${items.length})`}
@@ -310,27 +374,35 @@ export default function NotesImportPage() {
           type="button"
           onClick={() => setItems([])}
           disabled={!items.length || loading}
-          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, cursor: 'pointer' }}
+          style={{
+            padding: '8px 12px',
+            border: `1px solid ${D.btnSecondaryBorder}`,
+            borderRadius: 8,
+            cursor: 'pointer',
+            background: D.btnSecondaryBg,
+            color: D.text,
+            opacity: !items.length || loading ? 0.5 : 1,
+          }}
         >
           清空
         </button>
-          <span style={{ color: '#666', fontSize: 13, marginLeft: 'auto' }}>
+          <span style={{ color: D.muted, fontSize: 13, marginLeft: 'auto' }}>
             目前檔案：<b>{items.length}</b>，總大小：<b>{toReadableSize(totalSize)}</b>
           </span>
         </div>
 
         {loading && (
           <div style={{ marginBottom: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#666', marginBottom: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: D.muted, marginBottom: 6 }}>
               <span>{progressLabel || '匯入中...'}</span>
               <b>{progress}%</b>
             </div>
-            <div style={{ height: 8, background: '#f0f1f5', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{ height: 8, background: D.progressTrack, borderRadius: 999, overflow: 'hidden' }}>
               <div
                 style={{
                   width: `${Math.max(0, Math.min(100, progress))}%`,
                   height: '100%',
-                  background: '#4945ff',
+                  background: D.progressFill,
                   transition: 'width 160ms ease',
                 }}
               />
@@ -339,10 +411,18 @@ export default function NotesImportPage() {
         )}
       </section>
 
-      <section style={{ border: '1px solid #ececec', borderRadius: 8, padding: 12, marginBottom: 12 }}>
-        <div style={{ marginBottom: 8, fontWeight: 600 }}>分類設定</div>
+      <section
+        style={{
+          border: `1px solid ${D.border}`,
+          borderRadius: 8,
+          padding: 12,
+          marginBottom: 12,
+          background: D.bgPanel,
+        }}
+      >
+        <div style={{ marginBottom: 8, fontWeight: 600, color: D.text }}>分類設定</div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', color: D.text }}>
             <input
               type="radio"
               name="category-mode"
@@ -352,7 +432,7 @@ export default function NotesImportPage() {
             />
             AI 自動分類
           </label>
-          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', color: D.text }}>
             <input
               type="radio"
               name="category-mode"
@@ -369,7 +449,14 @@ export default function NotesImportPage() {
               value={manualCategory}
               onChange={(e) => setManualCategory(e.target.value)}
               disabled={loading || categoryLoading}
-              style={{ padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6, minWidth: 240 }}
+              style={{
+                padding: '6px 8px',
+                border: `1px solid ${D.border}`,
+                borderRadius: 6,
+                minWidth: 240,
+                background: D.bgInput,
+                color: D.text,
+              }}
             >
               {!categoryOptions.length && <option value="">尚無可用分類（匯入時會自動建立）</option>}
               {categoryOptions.map((opt) => (
@@ -384,10 +471,17 @@ export default function NotesImportPage() {
               value={manualCategory}
               onChange={(e) => setManualCategory(e.target.value)}
               disabled={loading}
-              style={{ padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6, minWidth: 220 }}
+              style={{
+                padding: '6px 8px',
+                border: `1px solid ${D.border}`,
+                borderRadius: 6,
+                minWidth: 220,
+                background: D.bgInput,
+                color: D.text,
+              }}
             />
-            {categoryLoading && <span style={{ color: '#666' }}>分類載入中...</span>}
-            {categoryError && <span style={{ color: '#b42318' }}>分類載入失敗：{categoryError}</span>}
+            {categoryLoading && <span style={{ color: D.muted }}>分類載入中...</span>}
+            {categoryError && <span style={{ color: D.danger }}>分類載入失敗：{categoryError}</span>}
           </div>
         )}
       </section>
@@ -395,7 +489,7 @@ export default function NotesImportPage() {
       <input
         ref={filesInputRef}
         type="file"
-        accept=".md,text/markdown"
+        accept=".md,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,text/markdown,image/*"
         multiple
         style={{ display: 'none' }}
         onChange={(e) => {
@@ -406,7 +500,7 @@ export default function NotesImportPage() {
       <input
         ref={dirInputRef}
         type="file"
-        accept=".md,text/markdown"
+        accept=".md,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,text/markdown,image/*"
         multiple
         style={{ display: 'none' }}
         onChange={(e) => {
@@ -416,24 +510,33 @@ export default function NotesImportPage() {
         {...{ webkitdirectory: 'true', directory: 'true' }}
       />
 
-      <section style={{ border: '1px solid #ececec', borderRadius: 8, maxHeight: 260, overflow: 'auto', marginBottom: 16, background: '#fff' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <section
+        style={{
+          border: `1px solid ${D.border}`,
+          borderRadius: 8,
+          maxHeight: 260,
+          overflow: 'auto',
+          marginBottom: 16,
+          background: D.bgElevated,
+        }}
+      >
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, color: D.text }}>
           <thead>
-            <tr style={{ background: '#fafafa' }}>
-              <th style={{ textAlign: 'left', padding: 8 }}>檔案路徑</th>
-              <th style={{ textAlign: 'left', padding: 8, width: 120 }}>大小</th>
+            <tr style={{ background: D.bgTableHead }}>
+              <th style={{ textAlign: 'left', padding: 8, color: D.text }}>檔案路徑</th>
+              <th style={{ textAlign: 'left', padding: 8, width: 120, color: D.text }}>大小</th>
             </tr>
           </thead>
           <tbody>
             {items.map((x) => (
-              <tr key={x.path} style={{ borderTop: '1px solid #f0f0f0' }}>
+              <tr key={x.path} style={{ borderTop: `1px solid ${D.rowBorder}` }}>
                 <td style={{ padding: 8 }}>{x.path}</td>
                 <td style={{ padding: 8 }}>{toReadableSize(x.file?.size || 0)}</td>
               </tr>
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={2} style={{ padding: 12, color: '#888' }}>
+                <td colSpan={2} style={{ padding: 12, color: D.empty }}>
                   尚未選擇檔案
                 </td>
               </tr>
@@ -442,30 +545,49 @@ export default function NotesImportPage() {
         </table>
       </section>
 
-      {error && <div style={{ color: '#b42318', marginBottom: 12 }}>錯誤：{error}</div>}
+      {error && (
+        <div style={{ color: D.danger, marginBottom: 12 }}>
+          錯誤：{error}
+        </div>
+      )}
 
       {result && (
-        <section style={{ border: '1px solid #e8e8e8', borderRadius: 8, padding: 12, background: '#fff' }}>
-          <h3 style={{ marginTop: 0 }}>匯入結果</h3>
-          <p style={{ margin: '8px 0' }}>
+        <section
+          style={{
+            border: `1px solid ${D.border}`,
+            borderRadius: 8,
+            padding: 12,
+            background: D.bgElevated,
+            color: D.text,
+          }}
+        >
+          <h3 style={{ marginTop: 0, color: D.text }}>匯入結果</h3>
+          <p style={{ margin: '8px 0', color: D.muted }}>
             created: <b>{result.summary?.created || 0}</b> / updated: <b>{result.summary?.updated || 0}</b> / failed:{' '}
             <b>{result.summary?.failed || 0}</b> / skipped: <b>{result.summary?.skipped || 0}</b>
+            {typeof result.summary?.minioImagesUploaded === 'number' && result.summary.minioImagesUploaded > 0 ? (
+              <>
+                {' '}
+                / MinIO 圖片替換: <b>{result.summary.minioImagesUploaded}</b>
+              </>
+            ) : null}
           </p>
           <div style={{ maxHeight: 260, overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, color: D.text }}>
               <thead>
-                <tr style={{ background: '#fafafa' }}>
-                  <th style={{ textAlign: 'left', padding: 8 }}>檔案</th>
-                  <th style={{ textAlign: 'left', padding: 8, width: 100 }}>結果</th>
-                  <th style={{ textAlign: 'left', padding: 8 }}>訊息</th>
-                  <th style={{ textAlign: 'left', padding: 8, width: 120 }}>slug</th>
-                  <th style={{ textAlign: 'left', padding: 8, width: 160 }}>分類</th>
-                  <th style={{ textAlign: 'left', padding: 8, width: 200 }}>標籤</th>
+                <tr style={{ background: D.bgTableHead }}>
+                  <th style={{ textAlign: 'left', padding: 8, color: D.text }}>檔案</th>
+                  <th style={{ textAlign: 'left', padding: 8, width: 100, color: D.text }}>結果</th>
+                  <th style={{ textAlign: 'left', padding: 8, color: D.text }}>訊息</th>
+                  <th style={{ textAlign: 'left', padding: 8, width: 120, color: D.text }}>slug</th>
+                  <th style={{ textAlign: 'left', padding: 8, width: 160, color: D.text }}>分類</th>
+                  <th style={{ textAlign: 'left', padding: 8, width: 200, color: D.text }}>標籤</th>
+                  <th style={{ textAlign: 'left', padding: 8, width: 72, color: D.text }}>MinIO</th>
                 </tr>
               </thead>
               <tbody>
                 {(result.results || []).map((r, idx) => (
-                  <tr key={`${r.path}-${idx}`} style={{ borderTop: '1px solid #f0f0f0' }}>
+                  <tr key={`${r.path}-${idx}`} style={{ borderTop: `1px solid ${D.rowBorder}` }}>
                     <td style={{ padding: 8 }}>{r.path}</td>
                     <td style={{ padding: 8 }}>{r.status}</td>
                     <td style={{ padding: 8 }}>{r.message || '-'}</td>
@@ -481,17 +603,18 @@ export default function NotesImportPage() {
                                 margin: '1px 3px 1px 0',
                                 padding: '1px 7px',
                                 borderRadius: 12,
-                                background: '#f0f4ff',
-                                border: '1px solid #c5d0f5',
+                                background: D.tagBg,
+                                border: `1px solid ${D.tagBorder}`,
                                 fontSize: 11,
-                                color: '#3355bb',
+                                color: D.tagText,
                               }}
                             >
                               {t}
                             </span>
                           ))
-                        : <span style={{ color: '#aaa' }}>-</span>}
+                        : <span style={{ color: D.empty }}>-</span>}
                     </td>
+                    <td style={{ padding: 8 }}>{typeof r.minioImages === 'number' ? r.minioImages : '-'}</td>
                   </tr>
                 ))}
               </tbody>

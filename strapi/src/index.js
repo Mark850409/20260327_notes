@@ -11,6 +11,7 @@ const {
   mergeNoRowsFilters,
   resolveOwnerDocumentScope,
 } = require('./utils/owner-document-scope');
+const { resolveArticleSlugLifecycle } = require('./utils/article-slug');
 
 const OWNER_SCOPED_CONTENT_TYPES = [
   'api::article.article',
@@ -176,6 +177,7 @@ module.exports = {
     strapi.db.lifecycles.subscribe({
       models: ['api::article.article'],
       async beforeCreate(event) {
+        await resolveArticleSlugLifecycle(strapi, event, true);
         const data = event?.params?.data;
         if (data && (data.owner === undefined || data.owner === null)) {
           const def = process.env.STRAPI_DEFAULT_ARTICLE_OWNER_ID;
@@ -189,6 +191,7 @@ module.exports = {
         await processInlinePastedImages(event);
       },
       async beforeUpdate(event) {
+        await resolveArticleSlugLifecycle(strapi, event, false);
         await processInlinePastedImages(event);
       },
     });

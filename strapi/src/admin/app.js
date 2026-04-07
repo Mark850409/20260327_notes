@@ -3,8 +3,7 @@ import { Upload } from '@strapi/icons';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { openPasteImageUploadDialog } from './utils/pasteImageModal';
-import { buildTimestampPastedFileName } from './utils/pasteImageFileName';
-import { initNotesSidebarHamburger } from './utils/notesSidebarHamburger';
+import { buildTimestampTitleSerialFileName } from './utils/pasteImageFileName';
 
 /**
  * 後台介面語言：Strapi 內建檔為 zh.json（繁體）、zh-Hans.json（簡體），沒有 zh-Hant。
@@ -53,6 +52,30 @@ export default {
 
     const isArticleContentRoute = () =>
       window.location.pathname.includes('/content-manager/collection-types/api::article.article');
+
+    /** 從內容管理編輯表單推斷 title，供貼圖預設檔名使用 */
+    const getArticleTitleFromDom = () => {
+      const root = document.querySelector('#app, [role="main"], main') || document.body;
+      const candidates = root.querySelectorAll(
+        'input[type="text"]:not([readonly]), textarea:not([readonly])',
+      );
+      for (const el of candidates) {
+        const name = (el.getAttribute('name') || '').toLowerCase();
+        const id = (el.getAttribute('id') || '').toLowerCase();
+        const aria = String(el.getAttribute('aria-label') || '').toLowerCase();
+        const ph = String(el.getAttribute('placeholder') || '').toLowerCase();
+        const block = el.closest('[class*="Field"], [data-strapi-field], fieldset, div') || el.parentElement;
+        const blockText = (block?.textContent || '').slice(0, 120).toLowerCase();
+        if (
+          name === 'title' ||
+          id.includes('title') ||
+          /title|標題/.test(`${aria} ${ph} ${blockText}`)
+        ) {
+          return (el.value || '').trim();
+        }
+      }
+      return '';
+    };
 
     const isEditableElement = (el) => {
       if (!el || !(el instanceof HTMLElement)) return false;
@@ -212,6 +235,30 @@ export default {
         file.type === safeType && file instanceof File
           ? file
           : new File([blob], file.name || `pasted-${Date.now()}.png`, { type: safeType });
+      const mode = dialogResult?.mode === 'minio' ? 'minio' : 'media';
+
+      if (mode === 'minio') {
+        const fd = new FormData();
+        fd.append('files', named, named.name || `pasted-${Date.now()}.png`);
+        fd.append('fileName', dialogResult.fileName || named.name || `pasted-${Date.now()}.png`);
+        fd.append('objectPathPrefix', dialogResult.minioPathPrefix || '');
+        const res = await fetch('/api/upload/paste-minio', {
+          method: 'POST',
+          body: fd,
+          credentials: 'include',
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg = json?.error?.message || json?.error || json?.message || '';
+          throw new Error(msg || `MinIO 上傳失敗 (${res.status})`);
+        }
+        if (!json?.url) throw new Error('MinIO 上傳成功但未取得 URL');
+        return {
+          url: json.url,
+          name: json.name || file.name || 'image',
+        };
+      }
+
       const fd = new FormData();
       fd.append('files', named, named.name || `pasted-${Date.now()}.png`);
       fd.append('fileName', dialogResult.fileName || named.name || `pasted-${Date.now()}.png`);
@@ -220,6 +267,7 @@ export default {
       const res = await fetch('/api/upload/inline-image', {
         method: 'POST',
         body: fd,
+        credentials: 'include',
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -277,10 +325,12 @@ export default {
         if (!pending.length) return;
 
         const batchTs = Date.now();
+        const docTitle = getArticleTitleFromDom() || 'untitled';
         const uploadedItems = [];
         for (let i = 0; i < pending.length; i += 1) {
           const { item, file } = pending[i];
-          const defaultFileName = buildTimestampPastedFileName(
+          const defaultFileName = buildTimestampTitleSerialFileName(
+            docTitle,
             file,
             item.type,
             i,
@@ -290,6 +340,7 @@ export default {
           // eslint-disable-next-line no-await-in-loop
           const dialog = await openPasteImageUploadDialog({
             defaultFileName,
+            defaultMinioPathPrefix: '',
             index: i + 1,
             total: pending.length,
           });
@@ -348,9 +399,92 @@ export default {
     document.addEventListener('paste', onPaste, true);
 
     /**
-     * Strapi 5 官方已移除可收合主側欄（僅保留窄圖示列＋ tooltip），無對應 Admin API。
-     * 改為自訂左上角漢堡鈕：見 ./utils/notesSidebarHamburger.js
+     * Content Manager 列表／編輯頁的多選關聯（tags、articles）在 zh 介面常顯示「N 項」或只顯示「項」。
+     * React 常把「數字」與「項」拆成相鄰文字節點，需一併處理。
      */
-    initNotesSidebarHamburger();
+    const patchRelationCountSuffix = () => {
+      try {
+        const pathName = window.location.pathname || '';
+        if (!pathName.includes('/content-manager/collection-types/')) return;
+        if (!pathName.includes('/api::')) return;
+
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            if (!node.nodeValue || !node.nodeValue.includes('項')) return NodeFilter.FILTER_REJECT;
+            const p = node.parentElement;
+            if (!p) return NodeFilter.FILTER_REJECT;
+            if (p.closest('textarea, input, [contenteditable="true"]')) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            if (p.closest('script, style')) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+
+        let n;
+        while ((n = walker.nextNode())) {
+          const raw = n.nodeValue;
+          if (!raw) continue;
+
+          let next = raw;
+          if (/項/.test(raw)) {
+            // 勿匹配「項目」：僅「N 項」數量摘要（項後不可接「目」）
+            next = raw
+              .replace(/(\d+)\s*項(?!目)/g, '$1')
+              .replace(/(\d+)項(?!目)/g, '$1');
+          }
+
+          const t = raw.trim();
+          if (t === '項') {
+            const prev = n.previousSibling;
+            if (
+              prev &&
+              prev.nodeType === Node.TEXT_NODE &&
+              /^\d+\s*$/.test(String(prev.nodeValue || ''))
+            ) {
+              prev.nodeValue = String(prev.nodeValue).trim();
+              next = '';
+            } else if (n.previousElementSibling) {
+              const pe = n.previousElementSibling;
+              const pt = (pe.textContent || '').trim();
+              if (/^\d+$/.test(pt)) {
+                next = '';
+              } else {
+                next = '多選';
+              }
+            } else {
+              next = '多選';
+            }
+          }
+
+          if (next !== raw) {
+            n.nodeValue = next;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    let patchTimer = 0;
+    const schedulePatch = () => {
+      if (patchTimer) window.clearTimeout(patchTimer);
+      patchTimer = window.setTimeout(() => {
+        patchTimer = 0;
+        patchRelationCountSuffix();
+      }, 0);
+    };
+
+    const mo = new MutationObserver(() => {
+      schedulePatch();
+    });
+    try {
+      mo.observe(document.body, { subtree: true, childList: true, characterData: true });
+    } catch {
+      /* ignore */
+    }
+    window.addEventListener('popstate', patchRelationCountSuffix);
+    patchRelationCountSuffix();
+
   },
 };

@@ -3,6 +3,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import NotFoundPage from '../../components/NotFoundPage.astro';
 import { backendFetchInit } from '../../lib/backendFetch';
 import { blogBodyToHtml } from '../../lib/blogBodyToHtml';
+import ArticleImageLightbox from '../../components/ArticleImageLightbox.vue';
 
 const { slug } = Astro.params;
 const apiBase = import.meta.env.API_BASE || 'http://backend:5000';
@@ -79,6 +80,7 @@ const bodyHtml = blogBodyToHtml(post?.body);
             </header>
 
             <div
+              id="article-body-content"
               class="prose prose-zinc max-w-none dark:prose-invert prose-headings:scroll-mt-24 prose-a:text-accent prose-a:hover:text-sky-400 prose-img:rounded-xl prose-img:shadow-sm"
               set:html={bodyHtml || '<p>無內容</p>'}
             />
@@ -88,6 +90,7 @@ const bodyHtml = blogBodyToHtml(post?.body);
             </footer>
           </div>
         </article>
+        {bodyHtml && <ArticleImageLightbox client:only="vue" />}
       </div>
     )}
   </BaseLayout>

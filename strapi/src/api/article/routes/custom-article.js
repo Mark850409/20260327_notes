@@ -18,6 +18,14 @@ module.exports = {
         auth: false,
       },
     },
+    {
+      method: 'POST',
+      path: '/upload/paste-minio',
+      handler: 'article.uploadPasteMinio',
+      config: {
+        auth: false,
+      },
+    },
   ],
 };
 
